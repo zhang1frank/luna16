@@ -1,0 +1,3 @@
+- path: ./TOOLS
+- path: ./luna16/core/analysis/wrangling
+  editable: TRUE

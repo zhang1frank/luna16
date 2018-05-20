@@ -1,0 +1,13 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+"e1839a8" = {path = ".", editable = true}
+"fac00a3" = {path = ".\\luna16\\core\\utils\\ransack\\inst\\root", editable = true}
+
+[dev-packages]
+
+[requires]
+python_version = "3.6"

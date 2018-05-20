@@ -1,0 +1,13 @@
+Package: luna16.analysis.wrangling
+Version: 0.1.0
+Depends: R (>= 3.4)
+Imports: reticulate (>= 1.7)
+MD5sum: 318a852b761deb06a4fc599a38043b6a
+NeedsCompilation: no
+
+Package: luna16.tools
+Version: 0.1.0
+Depends: R (>= 3.4)
+Imports: devtools (>= 1.13), IRkernel (>= 0.8), roxygen2 (>= 6.0)
+MD5sum: 62209f38a0b187cf375a661d114000f1
+NeedsCompilation: no

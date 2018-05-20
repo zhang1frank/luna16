@@ -1,0 +1,39 @@
+PackratFormat: 1.4
+PackratVersion: 0.4.9.2
+RVersion: 3.4.3
+Repos: CRAN=http://cran.r-project.org,
+    CRANextra=http://www.stats.ox.ac.uk/pub/RWin,
+    .cran=file:///C:/Users/zhang/Home/luna16/.cran
+
+Package: Rcpp
+Source: CRAN
+Version: 0.12.16
+Hash: 8cc9dc88c11acdcf8a6dec4a0f1500bc
+
+Package: jsonlite
+Source: CRAN
+Version: 1.5
+Hash: 9c51936d8dd00b2f1d4fe9d10499694c
+
+Package: luna16.analysis.wrangling
+Source: CRAN
+Version: 0.1.0
+Requires: reticulate
+
+Package: packrat
+Source: github
+Version: 0.4.9-2
+Hash: c73cc03ba66369a5791221307ff811c6
+GithubRepo: packrat
+GithubUsername: rstudio
+GithubRef: master
+GithubSha1: f18e2607af2935508d7f04ac91d96b5f3bfe09ae
+RemoteHost: https://api.github.com
+RemoteRepo: packrat
+RemoteUsername: rstudio
+RemoteSha: f18e2607af2935508d7f04ac91d96b5f3bfe09ae
+
+Package: reticulate
+Source: CRAN
+Version: 1.7
+Requires: Rcpp, jsonlite

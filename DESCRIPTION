@@ -1,0 +1,7 @@
+Package: luna16
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Imports:
+  luna16.analysis.wrangling
+RoxygenNote: 6.0.1

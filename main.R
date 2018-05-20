@@ -1,0 +1,5 @@
+packrat::repos_create("./.cran")
+packrat::repos_upload("./REMOTES", ".cran")
+packrat::repos_upload("./modules/core/data/wrangling", ".cran")
+packrat::init(options = list(local.repos = "./.cran"))
+shell("set PIPENV_VENV_IN_PROJECT=1& set PIP_PROCESS_DEPENDENCY_LINKS=1& pipenv install --skip-lock")

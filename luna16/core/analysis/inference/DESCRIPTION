@@ -1,0 +1,6 @@
+Package: luna16.data.analysis
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Imports:
+  reticulate (>= 1.7)
