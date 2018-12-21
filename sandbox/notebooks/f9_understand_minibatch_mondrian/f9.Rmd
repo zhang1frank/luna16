@@ -1,0 +1,100 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+In this example, the code that was used employed python2 print statements, so the default python was used instead of venv. Also, all reticulate modules were called with convert = FALSE to prevent having to think about numpy specifics.
+
+```{r}
+# reticulate::use_virtualenv(getOption("venv"))
+np <- reticulate::import("numpy", convert = FALSE)
+modules::import(magrittr)
+modules::import(gsubfn)
+```
+
+Examples of how to use `import_from_path`. The filename is the module, and the path is the directory where the file is located. Specific elements can be imported with $.
+
+```{r}
+load_data <- reticulate::import_from_path("mondrianforest_utils", path = "./mondrianforest/src", convert = FALSE)$load_data
+
+process_command_line <- reticulate::import_from_path("mondrianforest", path = "./mondrianforest/src", convert = FALSE)$process_command_line
+
+MondrianForest <- reticulate::import_from_path("mondrianforest", path = "./mondrianforest/src", convert = FALSE)$MondrianForest
+
+precompute_minimal <- reticulate::import_from_path("mondrianforest_utils", path = "./mondrianforest/src", convert = FALSE)$precompute_minimal
+
+get_data_min_max <- reticulate::import_from_path("mondrianforest", path = "./mondrianforest/src", convert = FALSE)$get_data_min_max
+```
+
+Try out the mondrian on the dummy dataset, which is fast. The data path had to be adjusted to account for code invocation from this notebook.
+
+```{r}
+settings <- process_command_line()
+reticulate::py_set_attr(settings, "data_path", "./mondrianforest/process_data/")
+# reticulate::py_set_attr(settings, "dataset", "satimage")
+# reticulate::py_set_attr(settings, "n_minibatches", 10 %>% as.integer)
+reticulate::py_set_attr(settings, "debug", TRUE)
+```
+
+Load the dummy data.
+
+```{r}
+data <- load_data(settings)
+```
+
+```{r}
+data
+```
+
+Instantiate instance of mondrian forest.
+
+```{r}
+mf <- MondrianForest(settings, data)
+```
+
+An example of how to do tuple instantiation with reticulate. If not automatic converting, need to explicitly call `py_to_r`. Also need `gsubfn`.
+
+```{r}
+list[param, cache] <- precompute_minimal(data, settings) %>% reticulate::py_to_r()
+```
+
+Call to fit the mondrian forest.
+
+```{r}
+mf$fit(data, data$train_ids_partition$current %>% reticulate::py_get_item(0), settings, param, cache)
+```
+
+How to access a dictionary with a number. The `0` notation won't work with python objects.
+
+```{r}
+data$train_ids_partition$current %>% reticulate::py_get_item(0)
+```
+
+Analyze the real sample dataset.
+
+```{r}
+settings <- process_command_line()
+reticulate::py_set_attr(settings, "data_path", "./mondrianforest/process_data/")
+reticulate::py_set_attr(settings, "dataset", "satimage")
+reticulate::py_set_attr(settings, "n_minibatches", 10 %>% as.integer)
+reticulate::py_set_attr(settings, "debug", TRUE)
+```
+
+```{r}
+data <- load_data(settings)
+```
+
+Determine what `get_data_min_max` actually does. It seems to look at data and pull out each dimension max and min over the entire data.
+
+```{r}
+get_data_min_max(data, data$train_ids_partition$current %>% reticulate::py_get_item(0))[1]
+```
+

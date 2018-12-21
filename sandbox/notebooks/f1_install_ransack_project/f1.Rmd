@@ -1,0 +1,60 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Follow these steps to build the project:
+
+- `activate luna16-env`
+    - Using anaconda to keep track of build dependencies in environment.yml
+- `sh -c 'source ./.venv.env; pipenv install --skip-lock'`
+    - Execute this in the top-level project directory with the .venv.env file and the Pipfile
+    - The .venv.env contains presets that will allow .venv folder to be installed locally and for dependencies to be installed properly
+        - The sh construction is to be Windows and Unix friendly
+    - `--skip-lock` is necessary for now to avoid a time out when verifying packages, idk when that will be fixed
+    - If executed properly, all dependencies in the Pipfile will be installed
+        - Remember to add local packages to the Pipfile to be installed
+    - This will install the ransack CLI tool that will allow us to install the R components of the project
+- `pipenv shell`
+    - This will allow us to use ransack
+    - If needing to build the R packrat in ransack manually, follow these steps in the ransack/cli directory:
+        - `packrat::repos_create("./.CRAN")`
+            - needs to be uppercase to avoid conflict with project specific .cran
+        - `packrat::repos_upload("./REMOTES", ".CRAN")`
+        - `packrat::repos_upload("../../../../../magics", ".CRAN")`
+            - a custom package called magics is used for paths
+        - `packrat::init(options = list(local.repos = "./.CRAN"))`
+        - `devtools::install_local("./REMOTES", force = TRUE)`
+        - `packrat::snapshot(ignore.stale = TRUE)`
+- `ransack hoist`
+    - Execute this in the top-level project directory with the RANSACK file
+    - This will do the following:
+        - Put all the local packages whose paths are in the RANSACK file in a local repository located in .cran folder
+            - This is necessary for restores to work with local packages
+        - Run `packrat::init` which will install all the local packages pointed at in the project root DESCRIPTION
+            - Only include dependencies that can be found on CRAN in these local packages, `packrat::init` does not respect devtools remote flags
+        - Run `devtools::install_local` on all local packages referenced in RANSACK file
+            - Do not include local packages in these packages, devtools will not find them
+            - Also includes documentation with `roxygen`
+            - Also creates symlinks for inst/root for all packages previously installed by `packrat::init`
+        - Run `packrat::snapshot` which will capture all packages installed with `devtools::install_local`
+            - This is necessary to capture dependencies that rely on devtools remote flags
+                - Ideally these dependencies will be isolated from the CRAN only ones through a REMOTES subdirectory in each project
+- `ransack clean`
+    - This will delete the .cran folder, eliminate packrat reference in .Rprofile, and delete the packrat folder
+    - If this doesn't work, you can manually delete the above as well
+- Other notes:
+    - For atom/hydrogen/jupyter to work with R, make sure to launch atom from the conda virtual environment
+        - This is because the project .Rprofile uses a pipenv command
+    - To get the python kernel to work, activate pipenv in the conda virtual environment and install ipykernel from there
+    - There will need to be a .Rprofile chain from everywhere you expect to run R or a notebook up to the project root .Rprofile to source packrat properly, this is sufficient
+        - `source("../.Rprofile", chdir = TRUE)`
+    - Don't forget Rtools for Windows based builds and Xcode for Mac based builds

@@ -1,0 +1,76 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Turns out as.integer also works for reticulate, by default, R doesn't use ints.
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+mx <- reticulate::import("mxnet")
+nd <- reticulate::import("mxnet")$nd
+py <- reticulate::import("builtins")
+np <- reticulate::import("numpy")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+mx$random$seed(1 %>% as.integer)
+```
+
+```{r}
+(probabilities <- nd$ones(6 %>% as.integer)$`__div__`(6))
+nd$sample_multinomial(probabilities)
+nd$sample_multinomial(probabilities, shape = c(10 %>% as.integer))
+nd$sample_multinomial(probabilities, shape = c(5 %>% as.integer, 10 %>% as.integer))
+```
+
+Simulate 1000 rolls
+
+```{r}
+(rolls <- nd$sample_multinomial(probabilities, shape = c(1000 %>% as.integer)))
+(list[unique, counts] <- np$unique(rolls$asnumpy(), return_counts = TRUE))
+(nd$array(counts)$`__div__`(np$sum(counts)))
+```
+
+```{r}
+counts <- nd$zeros(c(6 %>% as.integer, 1000 %>% as.integer))
+totals <- nd$zeros(6 %>% as.integer)
+(function() {
+rolls <- py$iter(rolls)
+`_` <- foreach(
+    roll = iterators::iter(function() reticulate::iter_next(rolls) %T>%
+        (. %>% is.null %>% if (.) stop("StopIteration", call. = FALSE))
+    ),
+    i = iterators::icount()
+) %do% {
+    totals[roll$asscalar() %>% as.integer]$`__iadd__`(1)
+    counts %>%
+    reticulate::py_set_item(
+        reticulate::tuple(
+            1:.$shape[[1]] - 1 %>% as.integer,
+            i - 1 %>% as.integer
+        ),
+        totals
+    )
+    return(NULL)
+}
+})()
+```
+
+```{r}
+x <- nd$array(1:1000)$reshape(c(1 %>% as.integer, 1000 %>% as.integer))
+estimates <- counts$`__div__`(x)
+estimates %>% .[reticulate::tuple(1:.$shape[[1]] - 1, 0 %>% as.integer)]
+estimates %>% .[reticulate::tuple(1:.$shape[[1]] - 1, 1 %>% as.integer)]
+estimates %>% .[reticulate::tuple(1:.$shape[[1]] - 1, 100 %>% as.integer)]
+```
+
+

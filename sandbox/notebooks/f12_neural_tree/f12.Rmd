@@ -1,0 +1,266 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+The idea behind neural tree is to use the mondrian forest algorithm to grow the neural network as data is presented in an online fashion. Each minibatch is an opportunity to grow the forest and the backwards pass will be done taking into account the newly grown architecture. Since trees are typically fitted in batch format, presumably the neural net will cease to grow after the first epoch. The neural random forest algorithm will be used to translate the tree into an appropriate network that is amenable to backpropagation. Different splitting criteria can be used in the tree, such as the original mondrian forest splitting (which is extremely randomized trees of certain parameter), best split, etc. A means of preserving categorical splits in the neural network will be considered. Node regularization (L0 on internal bias) will be considered to limit the depth of the tree.
+
+For gluon classes, we will need one forward pass that is capable of growing and another that is frozen (for testing purposes and for epochs where growth is not wanted). Functions will need to be written to infer a child node from its parent and vice versa. Weights will correspond to threshold and steepness values (also what L0 regularization will regularize). A separate matrix will need to be stored to hold dimension max and mins at each node. In the neural network formulation, each neuron is a mondrian node and has a need to store dimension and split time. Choosing when to grow the tree vs when to backpropagate and prune is a consideration (grow in one epoch, backpropagate in future epochs; grow and backpropagate simultaneously; grow, backpropagate, grow in alternation with the epoch). If using forests, knowing when to backpropagate on a tree might be important (like dropout on trees).
+
+Grow tree until the decrease in model surprise (KL divergence of parent model and child model) is minimal. KL divergence is done assuming conjugate distribution for prediction.
+
+Preliminaries
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+
+mx <- reticulate::import("mxnet", convert = FALSE)
+np <- reticulate::import("numpy", convert = FALSE)
+nd <- reticulate::import("mxnet", convert = FALSE)$nd
+autograd <- reticulate::import("mxnet", convert = FALSE)$autograd
+gluon <- reticulate::import("mxnet", convert = FALSE)$gluon
+nn <- reticulate::import("mxnet", convert = FALSE)$gluon$nn
+Block <- reticulate::import("mxnet", convert = FALSE)$gluon$Block
+
+py <- reticulate::import("builtins")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+```
+
+```{r}
+ctx <- mx$cpu()
+```
+
+Prepare to declare object.
+
+```{r}
+tryCatch({
+    py$type("_", reticulate::tuple(), reticulate::dict(
+      "__init__" = function(self, x) {
+        reticulate::py_set_attr(self, "_", x)
+        return(NULL)
+      }
+  ))(NULL)
+}, error = function (e) {i<-1})
+```
+
+Node object that captures:
+- min and max dimension
+- time since split
+- weights to features
+    - decision nodes have just two weights describing steepness of threshold and threshold to feature
+    - leaf nodes have a linked list describing what decisions need to be incorporated
+
+Tree object that is a two layer network:
+- first layer is the decision layer
+- second layer is the leaf layer
+
+Tree output object is a single layer:
+- weights connect to all decision and leaf nodes
+- weight encodes the output (prediction, embedding)
+
+Bagging forest object is an ensemble
+Boosting forest object is an ensemble
+
+```{r}
+TreeNode <- py$type("TreeNode",
+    reticulate::tuple(Block),
+    reticulate::dict(
+        "__init__" = function(self,
+            min_list, max_list, tau,
+            parent = NULL, left = NULL, right = NULL, ...
+        ) {
+            Block$`__init__`(self, ...)
+            reticulate::py_set_attr(self, "parent", parent)
+            reticulate::py_set_attr(self, "left", left)
+            reticulate::py_set_attr(self, "right", right)
+            with(self$name_scope(), {
+                reticulate::py_set_attr(self, "split",
+                    self$params$get("split")
+                )
+                reticulate::py_set_attr(self, "min_list",
+                    self$params$get("min_list", grad_req = "null")$set_data(min_list)
+                )
+                reticulate::py_set_attr(self, "max_list",
+                    self$params$get("max_list", grad_req = "null")$set_data(max_list)
+                )
+                reticulate::py_set_attr(self, "tau",
+                    self$params$get("tau", grad_req = "null")$set_data(tau)
+                )
+            })
+            return(NULL)
+        },
+        "forward" = function(self, x) {
+        }
+    )
+)
+```
+
+```{r}
+lb_ub_sampling <- function(x) {
+    min_d <- nd$min(x, axis = 0 %>% as.integer)
+    max_d <- nd$max(x, axis = 0 %>% as.integer)
+    range <- nd$subtract(max_d, min_d)
+    sample(
+        1:reticulate::py_len(range) - 1,
+        size = 1, replace = FALSE,
+        prob = range$asnumpy() %>% reticulate::py_to_r()
+    )
+}
+```
+
+```{r}
+uniform_split <- function(x) {
+    min_d <- nd$min(x, axis = 0 %>% as.integer)
+    max_d <- nd$max(x, axis = 0 %>% as.integer)
+    nd$random$uniform(min_d, max_d)
+}
+```
+
+```{r}
+a <- list()
+c(a, 2, 3)
+a
+```
+
+```{r}
+NeuralTree <- py$type("NeuralTree",
+    reticulate::tuple(Block),
+    reticulate::dict(
+      "__init__" = function(self,
+          stop_split, pick_best_split,
+          draw_split, draw_feature, draw_data,
+          ...
+      ) {
+          Block$`__init__`(self, ...)
+          reticulate::py_set_attr(self, "is_growing", FALSE)
+          reticulate::py_set_attr(self, "_stop_split", stop_split)
+          reticulate::py_set_attr(self, "_pick_best_split", pick_best_split)
+          reticulate::py_set_attr(self, "_draw_split", draw_split)
+          reticulate::py_set_attr(self, "_draw_feature", draw_feature)
+          reticulate::py_set_attr(self, "_draw_data", draw_data)
+          with(self$name_scope(), {
+              reticulate::py_set_attr(self, "decision_layer",
+                  gluon$contrib$nn$Concurrent()
+              )
+              reticulate::py_set_attr(self, "leaf_layer",
+                  gluon$contrib$nn$Concurrent()
+              )
+          })
+          return(NULL)
+      },
+      "_spawn_node" = function(self, x, ...) {
+          min_d <- nd$min(x, axis = 0 %>% as.integer)
+          max_d <- nd$max(x, axis = 0 %>% as.integer)
+          TreeNode(
+              min_list = min_d,
+              max_list = max_d,
+              tau = nd$random$exponential(
+                  nd$subtract(max_d, min_d)
+                    %>% nd$sum()
+                    %>% nd$reciprocal()
+              ),
+              ...
+          )
+      },
+      "_split_node" = function(self, x, node) {
+          with(self$name_scope(), {
+              if (self$`_stop_split`() == TRUE) {
+                  self$leaf_layer$add(node)
+              } else {
+                  # obtain split and split dim
+                  list[split, axis] <- x %>%
+                    self$draw_feature() %>%
+                    self$draw_split() %>%
+                    self$pick_best_split()
+                  # assign the split
+                  node$params$get("split")$set_data(split)
+                  # add node to network
+                  self$decision_layer$add(node)
+                  # recurse on left
+                  l_x <-
+                  l_node <- self$`_spawn_node`(l_x, parent = node)
+                  reticulate::py_set_attr(self, "left", l_node)
+                  self$`_split_node`(l_x, l_node)
+                  # recurse on right
+                  r_x <-
+                  r_node <- self$`_spawn_node`(r_x, parent = node)
+                  reticulate::py_set_attr(self, "right", r_node)
+                  self$`_split_node`(r_x, r_node)
+              }
+          })
+      },
+      "_extend_node" = function(self, x, node) {
+
+      },
+      "forward" = function(self, x) {
+          if (autograd$is_training() %>% reticulate::py_to_r()) {
+              # if you want to bootstrap, or do some other form of sample selection for training
+              x <- draw_data(x)
+              # if the tree is empty, initialize first node
+              if (reticulate::py_len(self$decision_layer) == 0) {
+
+              # if tree is nonempty, check if want to grow out tree
+              } elseif (self$is_growing == TRUE) {
+
+              }
+          } else {
+          }
+          x %>% self$decision_layer() %>% self$leaf_layer()
+      }
+    ))
+```
+
+```{r}
+test <- NeuralTree()
+test$collect_params()$initialize(ctx = ctx)
+test$collect_params()
+```
+
+```{r}
+with(autograd$train_mode(), {
+    test(nd$array(list(c(1,2,3), c(4,5,6))))
+})
+```
+
+```{r}
+test$collect_params()
+```
+
+```{r}
+test$`_children`
+```
+
+```{r}
+# with(autograd$predict_mode(), {
+#     print(autograd$is_training())
+# })
+# if (autograd$is_training() %>% reticulate::py_to_r()) print(1)
+reticulate::py_len(test$decision_layer)
+```
+
+```{r}
+nd$array(list(c(1,2,3), c(4,5,6))) %>% nd$sum()
+nd$subtract(nd$array(c(1,2,3)), nd$array(c(1,2,3)))
+```
+
+```{r}
+help <- 1
+with(list(help = TRUE), {
+    (function() {print(help)})()
+})
+help
+```
+
+```{r}
+(function(x, y = 1, z) {z})(x = 1, z = 3)
+```

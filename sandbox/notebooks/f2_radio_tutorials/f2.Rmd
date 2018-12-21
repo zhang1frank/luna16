@@ -1,0 +1,172 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+This forces reticulate to use the project local venv that has all the captured dependencies.
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+```
+
+This is needed to render (in the rmarkdown) reticulate called matplotlib plots later. The actual call requires extra 3 ticks, the extra set is to prevent atom's markdown reader from negating the next code block, which prevents code execution in atom hydrogen.
+
+```{python}
+import matplotlib.pyplot as plt
+```
+```
+
+Here are the imports.
+
+```{r}
+import::here("%>%", "%T>%",
+    .from = magrittr)
+
+radio <- reticulate::import("radio")
+radio.dataset <- reticulate::import("radio.dataset")
+plt <- reticulate::import("matplotlib.pyplot")
+builtins <- reticulate::import_builtins()
+```
+
+You need to specify mask for '*.mhd' input files in DIR_LUNA, and provide output dir path in DIR_DUMP. Here we use unzipped competition dataset, mhd files are stored in subfolders, names of subfolders are taken as ids.
+
+For ease of cross referencing, all data has moved into a package and paths to the data can be determined using `system.file.`
+
+```{r}
+DIR_LUNA <- file.path(system.file("dist", "luna16", package = "luna16.data.raw"), "s*", "*.mhd")
+print(DIR_LUNA)
+
+ind <- radio.dataset$FilesIndex(path = DIR_LUNA, no_ext = TRUE)
+
+print(length(ind$index))
+```
+
+It's faster to experiment on a subset of indexes, so we'll make a dataset of 10 scan.
+Let's load a scan and plot one of its slices:
+
+Note that R is 1-indexed. [] calls are replaced by list()
+
+```{r}
+ds <-radio.dataset$Dataset(
+    index = ind$create_subset(ind$indices[1:10]),
+    batch_class = radio$CTImagesMaskedBatch
+)
+
+batch <-ds$create_batch(list(ind$indices[1]))$load("raw")
+```
+
+```{r}
+print(batch$indices[1])
+print(batch$images_shape)
+```
+
+Matplotlib calls in reticulate work too. Just have to follow up with a python `plt.show` call.
+
+Note: () tuples are also replaced by list. The return of a multidim array from reticulate needs to be re-coerced when re-fed by using `array(., dim = dim(.))`. Also, need to force coercion to int using `builtins$int`. Also, accessing the n slice using [n, , ] of a 3D array. For magrittr method chaining, need `%>% {.$f()} %>%` otherwise, the first argument to `f` would be `.`, which is incorrect. Presumably `data.table` method chaining with [] wouldn't need {} because argument feeding only happens with functions.
+
+```{r}
+plt$figure(figsize=list(8, 8)) %>% {
+    .$add_subplot(builtins$int(111), aspect = "equal")
+} %>% {
+    .$imshow(array(batch$images, dim = dim(batch$images))[66, , ])
+}
+# don't have a plot in here or it will flush it out from the file from python
+```
+```{python}
+plt.show()
+```
+```
+
+It's easy to resize both a batch of images, and make resizing pipeline. First, let's see our ploted scan_id after resize:
+
+```{r}
+batch_r <- ds$create_batch(list(ind$indices[1]))$load('raw') %>% {
+    .$resize(n_workers = 4, shape = list(
+        builtins$int(128),
+        builtins$int(256),
+        builtins$int(256))
+    )
+}
+```
+
+```{r}
+print(batch_r$indices[1])
+print(batch_r$images_shape)
+```
+
+Not surprisingly, it is a little bit blurry as we decreased original height and width from 512 x 512 to 256 x 256
+
+```{r}
+plt$figure(figsize=list(8, 8)) %>% {
+    .$add_subplot(builtins$int(111), aspect = "equal")
+} %>% {
+    .$imshow(array(batch_r$images, dim = dim(batch_r$images))[61, , ])
+}
+```
+```{python}
+plt.show()
+```
+```
+
+Sometimes it is useful to equalize spacing along different axes but still be able to handle images, e.g. for training network, which often requires same input size.
+
+.unify_spacing helps here. Idea is following:
+
+1) Shape is changed for every scan so, that spacing would meet required (0.9, 0.9, 0.9)
+
+2) Interim shape is cropped (if it is bigger) or padded (if it is smaller) to meet shape
+
+```{r}
+batch_u <- ds$create_batch(list(ind$indices[1]))$load('raw')$unify_spacing(shape = list(builtins$int(384), builtins$int(448), builtins$int(448)), spacing = list(0.9, 0.9, 0.9))
+```
+
+You may note that image now reminds a cross due to padding default mode 'edge'. You may pass'padding' directly to .unify_spacing
+
+```{r}
+plt$figure(figsize=list(8, 8)) %>% {
+    .$add_subplot(builtins$int(111), aspect = "equal")
+} %>% {
+    .$imshow(array(batch_u$images, dim = dim(batch_u$images))[181, , ])
+}
+```
+```{python}
+plt.show()
+```
+```
+
+Let's try the same thing with ggplot. Admittedly, it's a lot slower so I wouldn't prefer this method.
+
+```{r}
+library(tidyverse)
+```
+
+ggplot presumably only takes data.frames, so need to coerce into right format (x, y, value) for geom_raster. First step is to convert to table, and then replace rownames and colnames with numbers (defaults to letters), an interesting magrittr construct is applied. The default is also transposed for some reason, so that fix is applied.
+
+```{r}
+data <- array(batch_u$images, dim = dim(batch_u$images))[181, , ] %>%
+    as.table() %>%
+    `rownames<-`(seq_len(nrow(.))) %>%
+    `colnames<-`(seq_len(ncol(.))) %>%
+    t() %>%
+    as.data.frame()
+```
+
+For performance, coerce, the x,y columns into numeric. geom_raster can plot matrix as image when coerced, scale_y_reverse is needed otherwise image is upside down (or trans on scale_y_continuous). scale_fill_gradient makes image look more like radiology image. coord_fixed is to correct the aspect ratio. scale_xy_continuous is to eliminate gray margin.
+
+```{r}
+data %>%
+    ggplot(aes(as.numeric(Var1), as.numeric(Var2))) +
+        geom_raster(aes(fill = Freq)) +
+        scale_fill_gradient(low = "black", high = "white") +
+        coord_fixed() +
+        scale_x_continuous(expand = c(0, 0)) +
+        scale_y_continuous(expand = c(0, 0), trans = scales::reverse_trans())
+```

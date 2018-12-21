@@ -2,7 +2,8 @@ PackratFormat: 1.4
 PackratVersion: 0.4.9.2
 RVersion: 3.4.3
 Repos: CRAN=http://cran.r-project.org,
-    CRANextra=http://www.stats.ox.ac.uk/pub/RWin
+    CRANextra=http://www.stats.ox.ac.uk/pub/RWin,
+    .CRAN=file:///C:/Users/zhang/Home/luna16/luna16/core/utils/ransack/inst/root/ransack/cli/.CRAN
 
 Package: BH
 Source: CRAN
@@ -104,6 +105,10 @@ Source: CRAN
 Version: 0.6.15
 Hash: 1f202ebd812ac7192be3739245746a13
 
+Package: funr
+Source: CRAN
+Version: 0.3.2
+
 Package: git2r
 Source: CRAN
 Version: 0.20.0
@@ -117,7 +122,8 @@ Hash: 381e42baedecc633c0e547a0c7ca9de7
 Package: hms
 Source: CRAN
 Version: 0.4.2
-Requires: rlang, pkgconfig
+Hash: b4096a4f6a6736138e9a825c2baaacf0
+Requires: pkgconfig, rlang
 
 Package: httr
 Source: CRAN
@@ -133,6 +139,11 @@ Package: jsonlite
 Source: CRAN
 Version: 1.5
 Hash: 9c51936d8dd00b2f1d4fe9d10499694c
+
+Package: magics
+Source: CRAN
+Version: 0.1.0
+Requires: funr, rapportools
 
 Package: magrittr
 Source: CRAN
@@ -173,6 +184,11 @@ RemoteRepo: packrat
 RemoteUsername: rstudio
 RemoteSha: f18e2607af2935508d7f04ac91d96b5f3bfe09ae
 
+Package: pander
+Source: CRAN
+Version: 0.6.2
+Requires: Rcpp, digest
+
 Package: pillar
 Source: CRAN
 Version: 1.2.1
@@ -182,11 +198,34 @@ Requires: cli, crayon, rlang, utf8
 Package: pkgconfig
 Source: CRAN
 Version: 2.0.1
+Hash: 0dda4a2654a22b36a715c2b0b6fbacac
+
+Package: plyr
+Source: CRAN
+Version: 1.8.4
+Hash: 2d09eea8a6bcac8e61b6a8728917b877
+Requires: Rcpp
+
+Package: rapportools
+Source: CRAN
+Version: 1.0
+Requires: plyr, pander, reshape
 
 Package: readr
 Source: CRAN
 Version: 1.1.1
-Requires: BH, R6, Rcpp, tibble, hms
+Hash: 70f2df9a128697b88134875a72dfd322
+Requires: BH, R6, Rcpp, hms, tibble
+
+Package: reshape
+Source: CRAN
+Version: 0.8.7
+Requires: plyr
+
+Package: reticulate
+Source: CRAN
+Version: 1.9
+Requires: Rcpp, jsonlite
 
 Package: rlang
 Source: CRAN

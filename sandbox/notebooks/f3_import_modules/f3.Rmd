@@ -1,0 +1,63 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+The careful thing to watch out for source is that it will overwrite the `.__file__` magic variable defined by magics if the sourced file also calls `magics::.__file__`. Very inconvenient.
+
+```{r}
+magics::.__file__(function(x) {
+    x
+}, TRUE)
+source(file.path(.__file__, "R.modules/test1.R"))
+```
+
+Also works for the modules package.
+
+```{r}
+magics::.__file__(function(x) {
+    x
+}, TRUE)
+modules::expose(file.path(.__file__, "R.modules/test1.R"))
+```
+
+Also works when called via script.
+
+```{r}
+system("Rscript ./R.modules/test.R", intern = TRUE)
+```
+
+Contents of the modules imported.
+
+```{r}
+magics::.__file__(function(x) {
+    x
+}, TRUE)
+```
+
+test.R
+```r
+`r paste(readLines(file.path(.__file__, "R.modules/test.R")), collapse = '\n')`
+```
+test1.R
+```r
+`r paste(readLines(file.path(.__file__, "R.modules/test1.R")), collapse = '\n')`
+```
+test2.R
+```r
+`r paste(readLines(file.path(.__file__, "R.modules/test2.R")), collapse = '\n')`
+```
+
+A different way to print the file.
+
+```{r}
+source(file.path(.__file__, "R.modules/test1.R"), echo = TRUE, keep.source = TRUE)
+```

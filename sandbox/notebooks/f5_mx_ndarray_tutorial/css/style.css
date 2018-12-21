@@ -1,0 +1,15 @@
+h1.title {
+    text-align: center;
+}
+h4.author {
+    text-align: center;
+}
+h4.author > em {
+    font-style: normal !important;
+}
+h4.date {
+    text-align: center;
+}
+h4.date > em {
+    font-style: normal !important;
+}

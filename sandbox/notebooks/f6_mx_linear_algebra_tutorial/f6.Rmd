@@ -1,0 +1,106 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Turns out as.integer also works for reticulate, by default, R doesn't use ints.
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+mx <- reticulate::import("mxnet")
+nd <- reticulate::import("mxnet")$nd
+py <- reticulate::import("builtins")
+modules::import(magrittr)
+mx$random$seed(1 %>% as.integer)
+```
+
+Some basic scalar arithmetic.
+
+```{r}
+(x <- nd$array(list(3)))
+(y <- nd$array(list(2)))
+x$`__add__`(y)
+x$`__mul__`(y)
+x$`__div__`(y)
+nd$power(x, y)
+x$asscalar()
+```
+
+Vector creation and indexing, length and shape
+
+```{r}
+(u <- nd$arange(4))
+u[3]
+py$len(u)
+u$shape
+```
+
+Some matrix examples, note that indexing only takes one argument, and if a number, will go in each index in order, hence it is impossible to select all columns for instance with this notation.
+
+```{r}
+(A <- nd$zeros(c(5 %>% as.integer, 4 %>% as.integer)))
+(x <- nd$arange(20))
+(A <- x$reshape(c(5 %>% as.integer, 4 %>% as.integer)))
+A$T
+A[2][3]
+```
+
+This is how to do it if you want to grab row 2 vs column 3. Remember that assignment with mx native `setitem` will not work with the second one.
+
+```{r}
+A[2]
+A %>%
+    .[reticulate::tuple(
+        1:.$shape[[1]] - 1 %>% as.integer,
+        3 %>% as.integer
+    )]
+```
+
+A tensor.
+
+```{r}
+(A <- nd$arange(24)$reshape(c(2 %>% as.integer, 3 %>% as.integer, 4 %>% as.integer)))
+```
+
+The sum function, which collapses all elements into a single number.
+
+```{r}
+u
+nd$sum(u)
+A
+nd$sum(A)
+```
+
+The mean function.
+
+```{r}
+A
+nd$mean(A)
+nd$sum(A)$`__div__`(A$size)
+A %>% (function(.)
+    nd$sum(.)$`__div__`(.$size))
+```
+
+Dot product.
+
+```{r}
+u
+(v <- nd$ones_like(u)$`__mul__`(2))
+nd$dot(u, v)
+```
+
+L2 norm and L1 norm.
+
+```{r}
+nd$norm(u)
+nd$sum(nd$abs(u))
+u %>% nd$abs() %>% nd$sum()
+```

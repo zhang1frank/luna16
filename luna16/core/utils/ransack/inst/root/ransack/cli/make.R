@@ -1,0 +1,6 @@
+packrat::repos_create("./.CRAN")
+# packrat::repos_upload("./REMOTES", ".CRAN")
+packrat::repos_upload("../../../../../magics", ".CRAN")
+packrat::init(options = list(local.repos = "./.CRAN"))
+# devtools::install_local("./REMOTES", force = TRUE)
+# packrat::snapshot(ignore.stale = TRUE)

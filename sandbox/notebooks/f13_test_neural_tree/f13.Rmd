@@ -1,0 +1,99 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Preliminaries
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+
+mx <- reticulate::import("mxnet", convert = FALSE)
+np <- reticulate::import("numpy", convert = FALSE)
+nd <- reticulate::import("mxnet", convert = FALSE)$nd
+autograd <- reticulate::import("mxnet", convert = FALSE)$autograd
+gluon <- reticulate::import("mxnet", convert = FALSE)$gluon
+nn <- reticulate::import("mxnet", convert = FALSE)$gluon$nn
+Block <- reticulate::import("mxnet", convert = FALSE)$gluon$Block
+
+py <- reticulate::import("builtins")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+```
+
+```{r}
+ctx <- mx$cpu()
+```
+
+Prepare to declare object.
+
+```{r}
+tryCatch({
+    py$type("_", reticulate::tuple(), reticulate::dict(
+      "__init__" = function(self, x) {
+        reticulate::py_set_attr(self, "_", x)
+        return(NULL)
+      }
+  ))(NULL)
+}, error = function (e) {i<-1})
+```
+
+```{r}
+sample(1:10, 1)
+```
+
+```{r}
+RandomHidden <- py$type("RandomHidden",
+    reticulate::tuple(Block),
+    reticulate::dict(
+      "__init__" = function(self,  ...) {
+          Block$`__init__`(self, ...)
+          return(NULL)
+      },
+      "forward" = function(self, x) {
+          hidden_dim <- sample(2:10, 1)
+          with(self$name_scope(), {
+              self$params$get("weight_1")
+              self$params$get("weight_1")$set_data(
+                  nd$ones(shape = reticulate::tuple(2 %>% as.integer, 10 %>% as.integer))
+              )
+              self$params$get("weight_1")$initialize()
+          })
+          return(x)
+      }
+    ))
+```
+
+```{r}
+test <- RandomHidden()
+```
+
+```{r}
+test$collect_params()$initialize(ctx = ctx)
+test$collect_params()
+```
+
+```{r}
+test(nd$ones(shape = reticulate::tuple(2 %>% as.integer, 10 %>% as.integer)))
+```
+
+```{r}
+test$collect_params()
+```
+
+```{r}
+test$params$`_params`$pop("randomhidden4_weight_1")
+```
+
+```{r}
+nd$ones(shape = reticulate::tuple(2 %>% as.integer, 10 %>% as.integer))$`__imul__`(2)
+```

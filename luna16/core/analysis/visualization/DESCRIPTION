@@ -1,0 +1,7 @@
+Package: luna16.analysis.visualization
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Imports:
+Repository:
+  .cran

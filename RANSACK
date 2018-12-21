@@ -1,3 +1,5 @@
-- path: ./TOOLS
+- path: ./REMOTES
+- path: ./sandbox
 - path: ./luna16/core/analysis/wrangling
-  editable: TRUE
+- path: ./luna16/core/data/raw
+- path: ./luna16/core/utils/magics

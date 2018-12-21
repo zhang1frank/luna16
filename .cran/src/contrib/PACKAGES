@@ -1,13 +1,35 @@
 Package: luna16.analysis.wrangling
 Version: 0.1.0
 Depends: R (>= 3.4)
-Imports: reticulate (>= 1.7)
-MD5sum: 318a852b761deb06a4fc599a38043b6a
+MD5sum: d0fbc634558d8a20d54d64d3c64512b4
 NeedsCompilation: no
 
-Package: luna16.tools
+Package: luna16.data.raw
 Version: 0.1.0
 Depends: R (>= 3.4)
-Imports: devtools (>= 1.13), IRkernel (>= 0.8), roxygen2 (>= 6.0)
-MD5sum: 62209f38a0b187cf375a661d114000f1
+MD5sum: d68be94cdbe1ca256c9d7133a6bc7f07
+NeedsCompilation: no
+
+Package: luna16.remotes
+Version: 0.1.0
+Depends: R (>= 3.4)
+Imports: devtools (>= 1.13), IRkernel (>= 0.8), knitr (>= 1.2),
+        roxygen2 (>= 6.0)
+MD5sum: e53ae21c346b92dbe1eb96fe42cf9bbb
+NeedsCompilation: no
+
+Package: luna16.sandbox
+Version: 0.1.0
+Depends: R (>= 3.4)
+Imports: doParallel (>= 1.0), foreach (>= 1.4), import (>= 1.1),
+        magrittr (>= 1.5), modules (>= 0.6), reticulate (>= 1.7),
+        tidyverse (>= 1.2), zeallot (>= 0.1)
+MD5sum: 0ac9a67880b5a5cb8023e18a2ae809a9
+NeedsCompilation: no
+
+Package: magics
+Version: 0.1.0
+Depends: R (>= 3.4)
+Imports: funr (>= 0.3), rapportools (>= 1.0)
+MD5sum: 91d275f01039cf219e140c83d15965e5
 NeedsCompilation: no

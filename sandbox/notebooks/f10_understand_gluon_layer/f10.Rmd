@@ -1,0 +1,130 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Preliminaries
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+
+mx <- reticulate::import("mxnet", convert = FALSE)
+np <- reticulate::import("numpy", convert = FALSE)
+nd <- reticulate::import("mxnet", convert = FALSE)$nd
+autograd <- reticulate::import("mxnet", convert = FALSE)$autograd
+gluon <- reticulate::import("mxnet", convert = FALSE)$gluon
+nn <- reticulate::import("mxnet", convert = FALSE)$gluon$nn
+Block <- reticulate::import("mxnet", convert = FALSE)$gluon$Block
+
+py <- reticulate::import("builtins")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+```
+
+```{r}
+ctx <- mx$cpu()
+batch_size <- 64 %>% as.integer
+train_data <- gluon$data$vision$MNIST(
+    train = TRUE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            label$astype(np$float32)
+        )
+    }) %>%
+    gluon$data$DataLoader(batch_size, shuffle = TRUE)
+
+test_data <- gluon$data$vision$MNIST(
+    train = FALSE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            label$astype(np$float32)
+        )
+    }) %>%
+    gluon$data$DataLoader(batch_size, shuffle = FALSE)
+```
+
+Prepare to declare object.
+
+```{r}
+tryCatch({
+    py$type("_", reticulate::tuple(), reticulate::dict(
+      "__init__" = function(self, x) {
+        reticulate::py_set_attr(self, "_", x)
+        return(NULL)
+      }
+  ))(NULL)
+}, error = function (e) {i<-1})
+```
+
+```{r}
+net2 <- py$type("MLP", reticulate::tuple(Block), reticulate::dict(
+  "__init__" = function(self, ...) {
+      Block$`__init__`(self, ...)
+      with(self$name_scope(), {
+          reticulate::py_set_attr(self, "dense0", nn$Dense(128 %>% as.integer))
+          reticulate::py_set_attr(self, "dense1", nn$Dense(64 %>% as.integer))
+          reticulate::py_set_attr(self, "dense2", nn$Dense(10 %>% as.integer))
+      })
+      return(NULL)
+  },
+  "forward" = function(self, x) {
+      x %>%
+      self$dense0() %>% nd$relu() %>%
+      self$dense1() %>% nd$relu() %>%
+      self$dense2()
+  }
+))()
+net2$initialize(ctx = ctx)
+```
+
+Proof that net2 is a viable nn block.
+
+```{r}
+reticulate::iter_next(py$iter(train_data))[[1]] %>% (function(.)
+    .$as_in_context(ctx)) %>%
+    net2()
+```
+
+```{r}
+print(net2$collect_params())
+```
+
+Try out sequential and see how initialization works.
+
+```{r}
+net1 <- gluon$nn$Sequential()
+with(net1$name_scope(), {
+    net1$add(gluon$nn$Dense(128 %>% as.integer, activation = "relu"))
+    net1$add(gluon$nn$Dense(64 %>% as.integer, activation = "relu"))
+    net1$add(gluon$nn$Dense(10 %>% as.integer))
+})
+print(net1$collect_params())
+```
+
+Watch as shape is inferred once data passes through.
+
+```{r}
+net1$collect_params()$initialize(mx$init$Xavier(magnitude = 2.24), ctx = ctx)
+print(net1$collect_params())
+```
+
+For some reason, if we don't do the conversion, net1 is not recognized as a function, have to convert.
+
+```{r}
+reticulate::iter_next(py$iter(train_data))[[1]] %>% (function(.)
+    .$as_in_context(ctx)) %>% (function(.)
+    (net1 %>% reticulate::py_to_r())(.))
+print(net1$collect_params())
+```
+

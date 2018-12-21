@@ -1,0 +1,7 @@
+Package: luna16.data.raw
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Repository:
+  .cran
+RoxygenNote: 6.0.1

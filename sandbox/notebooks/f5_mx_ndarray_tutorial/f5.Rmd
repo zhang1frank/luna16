@@ -1,0 +1,269 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Turns out as.integer also works for reticulate, by default, R doesn't use ints.
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+mx <- reticulate::import("mxnet")
+py <- reticulate::import("builtins")
+modules::import(magrittr)
+mx$random$seed(1 %>% as.integer)
+```
+
+Empty grabs memory and hands back matrix without initialization. Also turns out c() will work just as well as list() for some things.
+
+```{r}
+mx$nd$empty(c(3 %>% as.integer, 4 %>% as.integer))
+```
+
+Matrix of zeros.
+
+```{r}
+mx$nd$zeros(c(3 %>% as.integer, 4 %>% as.integer))
+```
+
+Matrix of ones.
+
+```{r}
+mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer))
+```
+
+Matrix of standard normal.
+
+```{r}
+mx$nd$random_normal(0, 1, shape = c(3 %>% as.integer, 4 %>% as.integer))
+```
+
+Getting the shape. Turns out it returns a list and not a vector.
+
+```{r}
+mx$nd$empty(c(3 %>% as.integer, 4 %>% as.integer))$shape
+```
+
+Query size, which is the number of elements.
+
+```{r}
+mx$nd$empty(c(3 %>% as.integer, 4 %>% as.integer))$size
+```
+
+Addition, the + operator from R will not work.
+
+```{r}
+mx$nd$zeros(c(3 %>% as.integer, 4 %>% as.integer))$`__add__`(mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer)))
+```
+
+Likewise with * multiplication.
+
+```{r}
+mx$nd$zeros(c(3 %>% as.integer, 4 %>% as.integer))$`__mul__`(mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer)))
+```
+
+Exponentiation.
+
+```{r}
+mx$nd$exp(mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer)))
+```
+
+Transpose and dot product.
+
+```{r}
+mx$nd$dot(mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer)), mx$nd$ones(c(3 %>% as.integer, 4 %>% as.integer))$T)
+```
+
+In place operations. The first block shows how a new array is produced and overwrites the first.
+
+```{r}
+x <- mx$nd$random_normal(0, 1, shape = c(3 %>% as.integer, 4 %>% as.integer))
+y <- mx$nd$zeros(c(3 %>% as.integer, 4 %>% as.integer))
+print(paste("id(y)", py$id(y)))
+y <- y$`__add__`(x)
+print(paste("id(y)", py$id(y)))
+```
+
+Assign result to previously allocated array with slice notation. Turns out slicing with mxnet in reticulate defaults to 0-indexing.
+
+```{r}
+x
+```
+
+This kind of subsetting will not support later assignment. Also doesn't even work with columns. (Unless you provide it `reticulate::tuple`).
+
+```{r}
+x[(1:3)-1]
+```
+
+Apparently, neither will this subsetting allow assignment.
+
+```{r}
+x$slice(c(0 %>% as.integer, NULL), c(x$shape[[1]] %>% as.integer, NULL))
+```
+
+Couldn't manage to get slice assignment to work, but copyto exists.
+
+```{r}
+x <- mx$nd$random_normal(0, 1, shape = c(3 %>% as.integer, 4 %>% as.integer))
+y <- mx$nd$zeros(c(3 %>% as.integer, 4 %>% as.integer))
+print(y)
+print(paste("id(y)", py$id(y)))
+
+y %>% (function(.)
+    .$`__add__`(x)) %>% (function(.)
+    .$copyto(y)
+)
+
+print(y)
+print(paste("id(y)", py$id(y)))
+```
+
+The above example is obvious that x+y will still allocate a temporary buffer to store result before copying it over to y. Can use elemwise_add to avoid temporary buffers.
+
+```{r}
+mx$nd$elemwise_add(x, y, out = y)
+```
+
+There is also in-place arithmetic.
+
+```{r}
+print(x)
+print(paste("id(x)", py$id(x)))
+x$`__iadd__`(y)
+print(x)
+print(paste("id(x)", py$id(x)))
+```
+
+More slicing.
+
+```{r}
+x
+```
+
+```{r}
+x[0:1]
+```
+
+Assignment doesn't work with subsetting, use `__setitem__` instead.
+
+```{r}
+x[0]$`__setitem__`(1 %>% as.integer, 5)
+x
+```
+
+The indexing that R lets you do is just on the first dimension, it won't let you use commas to access other dimensions (complains about unused argument).
+
+```{r}
+x[1] %>% (function(.)
+    .$`__setitem__`(1:2 %>% as.integer, 5))
+x
+```
+
+Probably the best way to get a specific column.
+
+```{r}
+x$slice_axis(axis = 1 %>% as.integer, begin = 1 %>% as.integer, end = 2 %>% as.integer)
+```
+
+For some reason, setitem with slice axis just doesn't work. Slice is probably making a copy and setitem is doing the modification in place, so the original item doesn't get modified.
+
+```{r}
+print(x$slice_axis(axis = 1 %>% as.integer, begin = 1 %>% as.integer, end = 2 %>% as.integer) %T>% (function(.) .$`__setitem__`(2 %>% as.integer, 5)) %>% (function(.) print(.)))
+print(x)
+```
+
+For some reason, this doesn't work either.
+
+```{r}
+x %>%
+ .[reticulate::tuple(1:.$shape[[1]] - 1 %>% as.integer, 1 %>% as.integer)] %T>% (function(.)
+ .$`__setitem__`(1:.$size - 1 %>% as.integer, 5)) %>% (function(.)
+ .$`__getitem__`(1:.$size - 1 %>% as.integer))
+print(x)
+```
+
+This also doesn't work.
+
+```{r}
+x %>%
+ .[reticulate::tuple(1:.$shape[[1]] - 1 %>% as.integer, 1 %>% as.integer)] %T>% (function(.)
+ .$`__setitem__`(1:.$size - 1 %>% as.integer, 5)) %>% (function(.)
+ .$`__getitem__`(1:.$size - 1 %>% as.integer)) %>% (function(.)
+ .$copyto((
+     x %>%
+      .[reticulate::tuple(1:.$shape[[1]] - 1 %>% as.integer, 1 %>% as.integer)]
+ )))
+print(x)
+```
+
+This finally works, have to use reticulate `py_set_item` to interface correctly with object reference. Also need to use reticulate tuple to allow multidimensional indexing since it only takes one argument. Note that c and list do not work.
+
+```{r}
+x %>%
+    reticulate::py_set_item(
+        reticulate::tuple(
+            1:.$shape[[1]] - 1 %>% as.integer,
+            1 %>% as.integer
+        ),
+        2
+    )
+print(x)
+```
+
+So in summary, `x[number]` will work with setitem for assignment, but that notation only works with rows (i.e. first dimension). When trying to use that notation with a tuple to access a column, setitem will no longer work because it won't modify the original object.
+
+Some examples on broadcasting follow. Also, assignment with () will no longer be silent.
+
+```{r}
+(x <- mx$nd$ones(c(3 %>% as.integer, 3 %>% as.integer)))
+(y <- mx$nd$arange(3 %>% as.integer))
+(x$`__add__`(y))
+```
+
+```{r}
+(y <- y$reshape(c(3 %>% as.integer, 1 %>% as.integer)))
+(x$`__add__`(y))
+```
+
+Converting to numpy array and creation of a new nd array from numpy array.
+
+```{r}
+x$asnumpy() %T>% {py$type(.) %>% print()} %>% mx$nd$array()
+```
+
+You can also control the context of where arrays are created.
+
+```{r}
+mx$nd$ones(c(3 %>% as.integer, 3 %>% as.integer), ctx = mx$cpu(1 %>% as.integer))
+```
+
+To move arrays, you can use `copyto`.
+
+```{r}
+mx$nd$ones(c(3 %>% as.integer, 3 %>% as.integer), ctx = mx$cpu(1 %>% as.integer))$copyto(mx$cpu(0 %>% as.integer))
+```
+
+In order to perform an operation, all the arrays have to be in the same context. Note that copying to a different context is a slow operation. You can check the context.
+
+```{r}
+mx$nd$ones(c(3 %>% as.integer, 3 %>% as.integer), ctx = mx$cpu(1 %>% as.integer))$copyto(mx$cpu(0 %>% as.integer))$context
+```
+
+Copying to the same context that an array already exists will create a copy and reassign the array (this changes the id). Calling `as_in_context` will prevent this copying process if the array already exists.
+
+```{r}
+(z <- mx$nd$ones(c(3 %>% as.integer, 3 %>% as.integer), ctx = mx$cpu(1 %>% as.integer)))
+print(py$id(z))
+z <- z$copyto(mx$cpu(1 %>% as.integer))
+print(py$id(z))
+z <- z$as_in_context(mx$cpu(1 %>% as.integer))
+print(py$id(z))
+```

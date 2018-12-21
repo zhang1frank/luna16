@@ -4,8 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-"e1839a8" = {path = ".", editable = true}
-"fac00a3" = {path = ".\\luna16\\core\\utils\\ransack\\inst\\root", editable = true}
+"luna16.python"                    = {editable = true, path = "."}
+"luna16.analysis.wrangling.python" = {editable = true, path = "./luna16/core/analysis/wrangling/inst/root"}
+"luna16.sandbox.python"            = {editable = true, path = "./sandbox"}
+"ransack"                          = {editable = true, path = "./luna16/core/utils/ransack/inst/root"}
 
 [dev-packages]
 

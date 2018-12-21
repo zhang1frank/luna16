@@ -1,0 +1,9 @@
+```python
+print(1)
+```
+```python
+a = 1
+```
+```python
+print(a)
+```

@@ -1,0 +1,10 @@
+Package: magics
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Imports:
+  funr (>= 0.3),
+  rapportools (>= 1.0)
+Repository:
+  .cran
+RoxygenNote: 6.0.1

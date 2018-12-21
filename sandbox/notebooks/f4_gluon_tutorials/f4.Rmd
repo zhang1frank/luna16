@@ -1,0 +1,269 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+```
+
+```{r}
+# don't run the line below, it fucks up later imports for some reason
+# py <- import("__builtin__")
+modules::import(gsubfn)
+modules::import(foreach)
+modules::import(magrittr)
+py <- reticulate::import("builtins")
+# tools <- reticulate::import("rpytools")
+np <- reticulate::import("numpy")
+mx <- reticulate::import("mxnet")
+```
+
+This is an example of how to define a python class in reticulate. It will come in handy later.
+
+For some reason, this is not always reliable.
+
+- It seems like the first invocation of type always returns a `class '*'` instance, that fails when invoked. However, after failing, all instances of py$type return a `class 'rpytools.call.*'`, which does work.
+- Ended up giving up finding a way to convert the class and wrote this preamble to fail first quietly.
+
+```{r}
+tryCatch({
+    py$type("_", reticulate::tuple(), reticulate::dict(
+      "__init__" = function(self, x) {
+        reticulate::py_set_attr(self, "_", x)
+        return(NULL)
+      }
+  ))(NULL)
+}, error = function (e) {i<-1})
+```
+
+```{r}
+Test <- py$type("Test", reticulate::tuple(), reticulate::dict(
+  "__init__" = function(self, x) {
+    reticulate::py_set_attr(self, "a", x)
+    return(NULL)
+  }
+))
+test <- Test(1)
+test$a
+```
+
+```{r}
+Test1 <- py$type("Test1", reticulate::tuple(Test), reticulate::dict(
+  "__init__" = function(self, x) {
+    Test$`__init__`(self, x)
+    return(NULL)
+  }
+))
+test1 <- Test1(5)
+test1$a
+```
+
+We’ll also want to set the contexts for our data and our models.
+
+```{r}
+data_ctx <- mx$cpu()
+model_ctx <- mx$cpu()
+```
+
+Some metadata.
+
+```{r}
+epochs <- py$int(10)
+batch_size <- py$int(64)
+num_inputs <- py$int(784)
+num_outputs <- py$int(10)
+num_examples <- py$int(60000)
+```
+
+A transform function.
+
+- Notes:
+    - For functions to return multiple arguments, have to use reticulate::tuple, list won't work
+    - Arithmetic operators won't work on mxnet data that hasn't been converted (things like +,-,*,/)
+        - Instead, use the `__add__`, `__div__` methods
+        - For mxnet data of a certain dimension (at least one dimension == 1), the astype method won't work (or any method for that matter as it will complain about atomic vectors)
+            - Luckily, normal operators will work on these
+            - And reticulate `np_array` actually works on them, though not more complicated data
+
+```{r}
+train_data <- mx$gluon$data$DataLoader(
+    mx$gluon$data$vision$MNIST(
+        train = TRUE,
+        transform = function(data, label) {
+            reticulate::tuple(
+                data$astype(np$float32)$`__div__`(255),
+                reticulate::np_array(label, "float32")
+            )
+        }
+    ),
+    batch_size, shuffle = TRUE
+)
+
+test_data <- mx$gluon$data$DataLoader(
+    mx$gluon$data.vision$MNIST(
+        train = FALSE,
+        transform = function(data, label) {
+            reticulate::tuple(
+                data$astype(np$float32)$`__div__`(255),
+                reticulate::np_array(label, "float32")
+            )
+        }
+    ),
+    batch_size, shuffle = FALSE
+)
+```
+
+```{r}
+net <- mx$gluon$nn$Sequential()
+with(
+    net$name_scope(),
+    {
+        net$add(mx$gluon$nn$Dense(py$int(64), activation = "relu"))
+        net$add(mx$gluon$nn$Dense(py$int(64), activation = "relu"))
+        net$add(mx$gluon$nn$Dense(num_outputs))
+    }
+)
+```
+
+Let's try to get the data to show that everything works.
+
+```{r}
+reticulate::iter_next(py$iter(train_data))
+```
+
+Parameter initialization
+
+```{r}
+net$collect_params()$initialize(mx$init$Normal(sigma = 0.1), ctx = model_ctx)
+```
+
+Softmax cross entropy loss
+
+```{r}
+softmax_cross_entropy <- mx$gluon$loss$SoftmaxCrossEntropyLoss()
+```
+
+Accuracy
+
+```{r}
+acc <- mx$metric$Accuracy()
+```
+
+Optimizer
+
+```{r}
+trainer <- mx$gluon$Trainer(net$collect_params(), "sgd", reticulate::dict(
+    "learning_rate" = 0.01
+))
+```
+
+Simulate a batch through the network
+
+- Different methods of method chaining with magrittr are shown, the problem is that the data object is always passed as the first argument and is unexpected in python method chains
+    - The first method doesn't raise linter errors but has more characters
+    - The second method is shorter but linter complains about the {}'s
+
+```{r}
+list[data, label] <- reticulate::iter_next(py$iter(train_data))
+
+data <- data %>% (function(.)
+    .$as_in_context(model_ctx)) %>% (function(.)
+    .$reshape(c(py$int(-1), py$int(784))))
+
+label <- label %>%
+    {.$as_in_context(model_ctx)}
+
+output <- net(data)
+# expand dim is necessary because it comes out as n, as opposed to n,1 dimension
+predictions <- mx$nd$argmax(output, axis = py$int(1))$expand_dims(axis=py$int(1))
+acc$update(preds = predictions, labels = label)
+acc$get()
+```
+
+Simulate a training batch through the network
+
+```{r}
+list[data, label] <- reticulate::iter_next(py$iter(train_data))
+
+data <- data %>% (function(.)
+    .$as_in_context(model_ctx)) %>% (function(.)
+    .$reshape(c(py$int(-1), py$int(784))))
+
+label <- label %>% (function(.)
+    .$as_in_context(model_ctx))
+
+with(mx$autograd$record(), {
+    output <- net(data)
+    loss <- softmax_cross_entropy(output, label)
+})
+
+loss$backward()
+trainer$step(data$shape[[1]])
+mx$nd$sum(loss)$asscalar()
+```
+
+Messing around with dataset and dataloader classes to get a feel for the api.
+
+```{r}
+dataset <- mx$gluon$data$dataset$ArrayDataset(
+    mx$random$uniform(shape = list(py$int(10), py$int(3))),
+    mx$random$uniform(shape = list(py$int(10), py$int(1)))
+)
+```
+
+These two implementations are equivalent, obviously the second one is better since we don't have to invoke a hidden method.
+
+- similar thing applies to `__iter__`, luckily, `py$iter` returns the iterator.
+
+```{r}
+dataset$`__getitem__`(py$int(1))
+```
+```{r}
+reticulate::py_get_item(dataset, py$int(1))
+```
+```{r}
+data_loader <- mx$gluon$data$DataLoader(dataset, batch_size = 5)
+```
+
+Calling `py$iter` on the data loader object will regenerate the data loader for another iteration. Otherwise, it will be empty after it runs once through.
+
+```{r}
+test <- py$iter(data_loader)
+```
+
+This is how to get tuple unpacking and enumerate functionality from the reticulate iterator
+
+- reticulate will return NULL by default if iterator = empty, iterators doesn't stop for nulls so need a check to call `stop("StopIteration")` to halt the iterators iter
+- `icount` gets the enumerate like index
+- tuple unpacking accomplished by `list[]` is provided by the `gsubfn` library
+    - must be called outside `foreach` in the `do` body, doesn't work inside
+- self invoking function is provided to provide variable proper scoping
+
+```{r}
+(function() {
+foreach(
+    D = iterators::iter(function() reticulate::iter_next(test) %T>%
+        (. %>% is.null %>% if (.) stop("StopIteration", call. = FALSE))
+    ),
+    i = iterators::icount()
+) %do% {
+    list[X_batch, y_batch] <- D
+    print(i)
+    y_batch$shape
+}
+})()
+```
+
+
+
+
+

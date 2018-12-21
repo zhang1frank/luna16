@@ -3,5 +3,7 @@ Version: 0.1.0
 Depends:
   R (>= 3.4)
 Imports:
-  luna16.analysis.wrangling
-RoxygenNote: 6.0.1
+  luna16.analysis.wrangling,
+  luna16.data.raw,
+  luna16.sandbox,
+  magics

@@ -1,0 +1,256 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+mx <- reticulate::import("mxnet")
+nd <- reticulate::import("mxnet")$nd
+autograd <- reticulate::import("mxnet")$autograd
+gluon <- reticulate::import("mxnet")$gluon
+py <- reticulate::import("builtins")
+np <- reticulate::import("numpy")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+mx$random$seed(1 %>% as.integer)
+```
+
+Set contexts.
+
+```{r}
+data_ctx <- mx$cpu()
+model_ctx <- mx$cpu()
+```
+
+Load mnist data.
+
+```{r}
+train_data <- gluon$data$vision$MNIST(
+    train = TRUE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            reticulate::np_array(label, "float32")
+        )
+    }) %>%
+    gluon$data$DataLoader(64 %>% as.integer, shuffle = TRUE)
+
+test_data <- gluon$data$vision$MNIST(
+    train = FALSE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            reticulate::np_array(label, "float32")
+        )
+    }) %>%
+    gluon$data$DataLoader(64 %>% as.integer, shuffle = FALSE)
+```
+
+Proof that the dataloader works.
+
+```{r}
+test <- py$iter(train_data)
+reticulate::iter_next(test)
+```
+
+Allocate parameters.
+
+```{r}
+W1 <- nd$random_normal(
+    shape = c(784 %>% as.integer, 256 %>% as.integer),
+    scale = 0.01,
+    ctx = model_ctx
+)
+b1 <- nd$random_normal(
+    shape = 256 %>% as.integer,
+    scale = 0.01,
+    ctx = model_ctx
+)
+W2 <- nd$random_normal(
+    shape = c(256 %>% as.integer, 256 %>% as.integer),
+    scale = 0.01,
+    ctx = model_ctx
+)
+b2 <- nd$random_normal(
+    shape = 256 %>% as.integer,
+    scale = 0.01,
+    ctx = model_ctx
+)
+W3 <- nd$random_normal(
+    shape = c(256 %>% as.integer, 10 %>% as.integer),
+    scale = 0.01,
+    ctx = model_ctx
+)
+b3 <- nd$random_normal(
+    shape = 10 %>% as.integer,
+    scale = 0.01,
+    ctx = model_ctx
+)
+params <- list(W1, b1, W2, b2, W3, b3)
+(function() {
+    for (param in params) {
+        param$attach_grad()
+    }
+})()
+```
+
+Activation function.
+
+```{r}
+relu <- function(x) {
+    nd$maximum(x, nd$zeros_like(x))
+}
+```
+
+Softmax output.
+
+```{r}
+softmax <- function(y_linear) {
+    exp <- nd$exp(y_linear$`__sub__`(nd$max(y_linear)))
+    partition <- nd$nansum(exp, axis = 0 %>% as.integer, exclude = TRUE)$reshape(c(-1 %>% as.integer, 1 %>% as.integer))
+    exp$`__div__`(partition)
+}
+```
+
+Cross entropy loss function.
+
+```{r}
+cross_entropy <- function(yhat, y) {
+    nd$nansum(y$`__mul__`(nd$log(yhat)), axis = 0 %>% as.integer, exclude = TRUE)$`__neg__`()
+}
+```
+
+Softmax cross entropy.
+
+```{r}
+softmax_cross_entropy <- function(yhat_linear, y) {
+    nd$nansum(y$`__mul__`(nd$log_softmax(yhat_linear)), axis = 0 %>% as.integer, exclude = TRUE)$`__neg__`()
+}
+```
+
+```{r}
+net <- function(X) {
+    X %>% (function(.)
+    nd$dot(., W1)$`__add__`(b1) %>% relu()) %>% (function(.)
+    nd$dot(., W2)$`__add__`(b2) %>% relu()) %>% (function(.)
+    nd$dot(., W3)$`__add__`(b3))
+}
+```
+
+Optimizer.
+
+```{r}
+SGD <- function(params, lr) {
+    for (param in params) {
+        param$`__isub__`(param$grad$`__mul__`(lr))
+    }
+}
+```
+
+One training batch to ensure everything at least executes.
+
+```{r}
+test <- py$iter(train_data)
+```
+
+```{r}
+cumulative_loss <- 0
+list[data, label] <- reticulate::iter_next(test)
+data <- data$as_in_context(model_ctx)$reshape(c(-1 %>% as.integer, 784 %>% as.integer))
+label <- label$as_in_context(model_ctx)
+label_one_hot <- nd$one_hot(label, 10 %>% as.integer)
+with(autograd$record(), {
+    output <- net(data)
+    loss <- softmax_cross_entropy(output$reshape_like(label_one_hot), label_one_hot)
+})
+check <- W3$sum()$asscalar()
+loss$backward()
+SGD(params, 0.005)
+print(check)
+print(W3$sum()$asscalar())
+print(check == W3$sum()$asscalar())
+cumulative_loss <- cumulative_loss + nd$sum(loss)$asscalar()
+predictions <- nd$argmax(output, axis = 1 %>% as.integer)$expand_dims(axis = 1 %>% as.integer)
+nd$sum(nd$equal(predictions, label))
+```
+
+Evaluation metric.
+
+```{r}
+evaluate_accuracy <- function(data_iterator, net) {
+    numerator <- nd$array(list(0))
+    denominator <- nd$array(list(0))
+    data_iterator <- py$iter(data_iterator)
+    (function() {
+    foreach(
+        D = iterators::iter(function() reticulate::iter_next(data_iterator) %T>%
+            (. %>% is.null %>% if (.) stop("StopIteration", call. = FALSE))
+        ),
+        i = iterators::icount()
+    ) %do% {
+        list[data, label] <- D
+        data <- data$as_in_context(model_ctx)$reshape(c(-1 %>% as.integer, 784 %>% as.integer))
+        label <- label$as_in_context(model_ctx)
+        output <- net(data)
+        predictions <- nd$argmax(output, axis = 1 %>% as.integer)$expand_dims(axis = 1 %>% as.integer)
+        numerator$`__iadd__`(nd$sum(nd$equal(predictions, label)))
+        denominator$`__iadd__`(data$shape[[1]])
+    }
+    })()
+    numerator$`__div__`(denominator)$asscalar()
+}
+```
+
+```{r}
+evaluate_accuracy(test_data, net)
+```
+
+```{r}
+evaluate_accuracy(train_data, net)
+```
+
+Got to make sure the dimensions are appropriate. The softmax cross entropy wasn't working until the output was reshaped like label one hot. Also atom hydrogen does not print intermediate output until the entire code has run.
+
+```{r}
+(function() {
+foreach(e = 1:1) %do% {
+    cumulative_loss <- 0
+    (function() {
+    train_data <- py$iter(train_data)
+    foreach(
+        D = iterators::iter(function() reticulate::iter_next(train_data) %T>%
+            (. %>% is.null %>% if (.) stop("StopIteration", call. = FALSE))
+        ),
+        i = iterators::icount()
+    ) %do% {
+        list[data, label] <- D
+        data <- data$as_in_context(model_ctx)$reshape(c(-1 %>% as.integer, 784 %>% as.integer))
+        label <- label$as_in_context(model_ctx)
+        label_one_hot <- nd$one_hot(label, 10 %>% as.integer)
+        with(autograd$record(), {
+            output <- net(data)
+            loss <- softmax_cross_entropy(output$reshape_like(label_one_hot), label_one_hot)
+        })
+        loss$backward()
+        SGD(params, 0.005)
+        cumulative_loss <<- cumulative_loss + nd$sum(loss)$asscalar()
+        predictions <- nd$argmax(output, axis = 1 %>% as.integer)$expand_dims(axis = 1 %>% as.integer)
+    }
+    })()
+    test_accuracy <- evaluate_accuracy(test_data, net)
+    # train_accuracy <- evaluate_accuracy(train_data, net)
+    list(e = e, loss = cumulative_loss / 60000, test_accuracy = test_accuracy)
+}
+})()
+```
+

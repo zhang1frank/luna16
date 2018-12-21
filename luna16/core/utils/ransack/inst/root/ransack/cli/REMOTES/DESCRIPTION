@@ -1,0 +1,11 @@
+Package: ransack.cli.remotes
+Version: 0.1.0
+Depends:
+  R (>= 3.4)
+Imports:
+  drake (>= 5.2),
+  graph (>= 1.59)
+Remotes:
+  github::Bioconductor/graph
+Repository:
+  .cran

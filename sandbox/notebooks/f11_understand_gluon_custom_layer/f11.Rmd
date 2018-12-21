@@ -1,0 +1,196 @@
+---
+title: '`r toupper(gsub("_.*$", "", basename(getwd())))`'
+author: Frank Zhang
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+    html_document:
+        css: css/style.css
+---
+
+```{r, eval=FALSE, echo=FALSE}
+rmarkdown::render(paste(gsub("_.*$", "", basename(getwd())), ".Rmd", sep = ""), output_dir = "dist")
+```
+
+Preliminaries
+
+```{r}
+reticulate::use_virtualenv(getOption("venv"))
+
+mx <- reticulate::import("mxnet", convert = FALSE)
+np <- reticulate::import("numpy", convert = FALSE)
+nd <- reticulate::import("mxnet", convert = FALSE)$nd
+autograd <- reticulate::import("mxnet", convert = FALSE)$autograd
+gluon <- reticulate::import("mxnet", convert = FALSE)$gluon
+nn <- reticulate::import("mxnet", convert = FALSE)$gluon$nn
+Block <- reticulate::import("mxnet", convert = FALSE)$gluon$Block
+
+py <- reticulate::import("builtins")
+modules::import(foreach)
+modules::import(magrittr)
+modules::import(gsubfn)
+```
+
+```{r}
+ctx <- mx$cpu()
+
+batch_size <- 64 %>% as.integer
+
+train_data <- gluon$data$vision$MNIST(
+    train = TRUE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            label$astype(np$float32)
+        )
+    }) %>%
+    gluon$data$DataLoader(batch_size, shuffle = TRUE)
+
+test_data <- gluon$data$vision$MNIST(
+    train = FALSE,
+    transform = function(data, label) {
+        reticulate::tuple(
+            data$astype(np$float32)$`__div__`(255),
+            label$astype(np$float32)
+        )
+    }) %>%
+    gluon$data$DataLoader(batch_size, shuffle = FALSE)
+```
+
+Prepare to declare object.
+
+```{r}
+tryCatch({
+    py$type("_", reticulate::tuple(), reticulate::dict(
+      "__init__" = function(self, x) {
+        reticulate::py_set_attr(self, "_", x)
+        return(NULL)
+      }
+  ))(NULL)
+}, error = function (e) {i<-1})
+```
+
+To start, let’s pretend that we want to use gluon for its optimizer, serialization, etc, but that we need a new layer. Specifically, we want a layer that centers its input about 0 by subtracting its mean. We’ll go ahead and define the simplest possible Block. Remember from the last tutorial that in gluon a layer is called a Block (after all, we might compose multiple blocks into a larger block, etc.).
+
+```{r}
+CenteredLayer <- py$type("CenteredLayer", reticulate::tuple(Block), reticulate::dict(
+  "__init__" = function(self, ...) {
+      Block$`__init__`(self, ...)
+      return(NULL)
+  },
+  "forward" = function(self, x) {
+      x$`__sub__`(nd$mean(x))
+  }
+))
+```
+
+```{r}
+net <- CenteredLayer()
+net(nd$array(list(1,2,3,4,5)))
+```
+
+```{r}
+net2 <- nn$Sequential() %T>% (function(.)
+    .$add(nn$Dense(128 %>% as.integer))) %T>% (function(.)
+    .$add(nn$Dense(10 %>% as.integer))) %T>% (function(.)
+    .$add(CenteredLayer()))
+```
+
+```{r}
+net2$collect_params()$initialize(mx$init$Xavier(magnitude = 2.24), ctx = ctx)
+```
+
+```{r}
+net2$`_children`
+```
+
+```{r}
+reticulate::py_get_item(net2$`_children`, "0")
+# net2$`_children`$pop("1")
+```
+
+```{r}
+net2$collect_params()
+```
+
+Proof that net2 is a viable nn block.
+
+```{r}
+reticulate::iter_next(py$iter(train_data))[[1]] %>% (function(.)
+    .$as_in_context(ctx)) %>% (function(.)
+    reticulate::py_to_r(net2)(.)) %>%
+    nd$mean()
+```
+
+```{r}
+print(net2$collect_params())
+```
+
+Create a custom fully connected layer.
+
+```{r}
+MyDense <- py$type("MyDense",
+    reticulate::tuple(Block),
+    reticulate::dict(
+        "__init__" = function(self, units, in_units = 0, ...) {
+            Block$`__init__`(self, ...)
+            with(self$name_scope(), {
+                reticulate::py_set_attr(self, "weight",
+                    self$params$get("weight", init = mx$init$Xavier(magnitude = 2.24), shape = reticulate::tuple(in_units, units))
+                )
+                reticulate::py_set_attr(self, "bias",
+                    self$params$get("bias", shape = reticulate::tuple(units))
+                )
+            })
+            return(NULL)
+        },
+      "forward" = function(self, x) {
+            with(x$context, {
+                x %>% (function(.)
+                    nd$dot(., self$weight$data())$`__add__`(self$bias$data()) %>% nd$relu())
+            })
+      }
+  ))
+```
+
+```{r}
+dense <- MyDense(20 %>% as.integer, in_units = 10 %>% as.integer)
+dense$collect_params()$initialize(ctx = ctx)
+dense$params
+```
+
+Proof that the layer is viable
+
+```{r}
+dense(nd$ones(shape = reticulate::tuple(2 %>% as.integer, 10 %>% as.integer)))
+```
+
+```{r}
+net <- gluon$nn$Sequential()
+with(net$name_scope(), {
+    net$add(MyDense(128 %>% as.integer, in_units = 784 %>% as.integer))
+    net$add(MyDense(64 %>% as.integer, in_units = 128 %>% as.integer))
+    net$add(MyDense(10 %>% as.integer, in_units = 64 %>% as.integer))
+})
+```
+
+```{r}
+print(net$collect_params())
+```
+
+```{r}
+with(autograd$predict_mode(), {
+    print(autograd$is_training())
+})
+
+with(autograd$train_mode(), {
+    print(autograd$is_training())
+})
+
+with(autograd$record(), {
+    print(autograd$is_training())
+})
+
+with(autograd$record(train_mode = FALSE), {
+    print(autograd$is_training())
+})
+```
