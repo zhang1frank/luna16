@@ -9,7 +9,7 @@ from collections import OrderedDict
 class Tree(Block):
   def __init__(self,
     units = 1, weight_initializer = None,
-    droprate_init = 0.5, temperature = 0.66, limit_lo = -0.1, limit_hi = 1.1,
+    droprate_init = 0.1, temperature = 0.66, limit_lo = -0.1, limit_hi = 1,
     **kwargs):
     super(Tree, self).__init__(**kwargs)
 
@@ -98,7 +98,7 @@ class Tree(Block):
 
   def _grow(self, x):
 
-    for node in self._embeddlayer._children.values():
+    for node in list(self._embeddlayer._children.values()):
       if (hasattr(node, "_decision") and
         (node._decision._gate() == 0 or node._decision._sharpness.data() <= 0)
       ):
@@ -273,8 +273,7 @@ class Tree(Block):
             _go_below(x)
           else:
             e = nd.random.exponential(1/extent)
-            if (node._box._tau.shape is None or
-              parent_tau + e < node._box._tau.data()):
+            if (parent_tau + e < node._box._tau.data()):
               _go_above(x, parent_tau + e)
             else:
               _go_below(x)
@@ -289,12 +288,16 @@ class Tree(Block):
       splt = self._routerlayer(x)
       embd = self._embeddlayer(x)
 
-      router = nd.zeros_like(psep)
-      router_mat = nd.stack(*[
-        nd.zeros_like(psep) for x in self._weightlayer
-        ], axis = 1)
-      weight = nd.zeros_like(psep)
-      embedd = nd.zeros_like(embd)
+      # router = nd.zeros_like(psep)
+      # router_mat_t = nd.stack(*[
+      #   nd.zeros_like(psep) for x in self._weightlayer
+      #   ], axis = 1)
+      # weight = nd.zeros_like(psep)
+      # embedd = nd.zeros_like(embd)
+      router = {}
+      router_mat = {}
+      weight = {}
+      embedd = {}
 
     else:
       return lambda x: self._embeddlayer(x)
@@ -312,6 +315,7 @@ class Tree(Block):
       i_node = int(i_node)
 
       # calculate the embedd matrix
+      # embedd[i_node] = node()
       embedd[i_node] = node()
 
       # calculate the router matrix
@@ -322,9 +326,13 @@ class Tree(Block):
         )
         i = int(i)
         direction = self._structure[node._box._parent][node]
-        path += splt[:, i] * direction - 1
+        path = path + splt[:, i] * direction - 1
 
-      router[:, i_node] = path + 0.5
+      # router[:, i_node] = path + 0.5
+      router[i_node] = path + 0.5
+
+      # prevent routing decay
+      # path = nd.minimum(0, nd.sign(path + 1))
 
       # calculate the weight matrix
       if (node._box._parent is not None and children is not None):
@@ -333,18 +341,20 @@ class Tree(Block):
           if value == node._box._parent._box
         )
         i_parent = int(i_parent)
-        prob *= (1 - psep[:, i_parent])
+        prob = prob * (1 - psep[:, i_parent])
 
       if (children is None):
         w = 1 - remain
       else:
         w = psep[:, i_node] * prob
-        remain += w
+        remain = remain + w
 
-      weight[:, i_node] = w
+      # weight[:, i_node] = w
+      weight[i_node] = w
 
       # calculate the partial router matrix
-      path_mat = nd.zeros_like(psep)
+      # path_mat_t = nd.zeros_like(psep)
+      path_mat = {}
       pie = nd.maximum(nd.sign(path + 1), 0)
       cur_node = node
       cur_path = path + 0
@@ -356,8 +366,9 @@ class Tree(Block):
         )
         i_cur_node = int(i_cur_node)
         frac = nd.maximum(cur_path + 0.5, -0.5) + 0.5
-        path_mat[:, i_cur_node] = frac * pie
-        pie -= frac * pie
+        # path_mat_t[:, i_cur_node] = frac * pie
+        path_mat[i_cur_node] = frac * pie
+        pie = pie - frac * pie
 
         if (cur_node._box._parent is not None):
           cur_i = next(
@@ -366,10 +377,18 @@ class Tree(Block):
           )
           cur_i = int(cur_i)
           cur_direction = self._structure[cur_node._box._parent][cur_node]
-          cur_path -= splt[:, cur_i] * cur_direction - 1
+          cur_path = cur_path - (splt[:, cur_i] * cur_direction - 1)
           cur_node = cur_node._box._parent
         else:
-          router_mat[:, i_node, :] = path_mat
+          # router_mat_t[:, i_node, :] = path_mat_t
+          n_node = len(self._weightlayer)
+          router_mat[i_node] = nd.stack(
+            *[path_mat[key]
+              if key in path_mat else nd.zeros_like(splt[:, 0])
+              for key in range(n_node)],
+            axis = -1
+          )
+
           break
 
       if (children is not None):
@@ -387,20 +406,33 @@ class Tree(Block):
     root = next(iter(self._structure.items()))[0]
 
     if (len(self._routerlayer) > 0):
-      router, router_mat, weight, embedd = self._contextify(x)(root)
+      router_d, router_mat_d, weight_d, embedd_d = self._contextify(x)(root)
+
+      router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
+      weight = nd.stack(*[weight_d[key] for key in sorted(weight_d)], axis = -1)
+
+      embedd = nd.stack(*[embedd_d[key] for key in sorted(embedd_d)], axis = 0)
+      router_mat = nd.stack(
+        *[router_mat_d[key] for key in sorted(router_mat_d)], axis = 1)
 
       presence = nd.sum(router_mat, axis = 2)
       weight_adj = presence * weight
       depth = len(self._weightlayer) - nd.topk(nd.reverse(presence, axis = 1))
-      depth -= 1
+      depth = depth - 1
       depth = depth[:, 0]
       remainder = 1 - nd.sum(weight_adj, axis = 1)
-      remainder += nd.choose_element_0index(weight_adj, depth)
-      weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
+      # remainder = remainder + nd.choose_element_0index(weight_adj, depth)
+      remainder = remainder + nd.concat(
+        *[x[d] for d, x in zip(depth, weight_adj)], dim = 0)
+      # weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
+      weight_adj = nd.stack(
+        *[nd.concat(*[y if i != d else r for i, y in enumerate(x)], dim = 0)
+            for d, r, x in zip(depth, remainder, weight_adj)
+          ], axis = 0)
 
       head = nd.sum(nd.expand_dims(weight_adj, axis = 2) * router_mat, axis = 1)
 
-      return nd.expand_dims(nd.dot(head, embedd), axis = -1)
+      return nd.dot(head, embedd)
 
     else:
       head = nd.ones_like(nd.slice_axis(x, axis = 1, begin = 0, end = None))

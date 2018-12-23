@@ -16,6 +16,10 @@ model_ctx = ctx
 
 # %%
 
+nd.sigmoid(nd.array([0]))
+
+# %%
+
 rng = np.random.RandomState(1)
 X = np.sort(5 * rng.rand(80, 1), axis = 0)
 X_test = np.arange(0.0, 5.0, 0.01)[:, np.newaxis]
@@ -46,13 +50,77 @@ trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': .01})
 
 # %%
 
-net(nd.array(X))
-
 tree = Tree()
-tree._weightlayer
+tree.collect_params().initialize(force_reinit = True)
 
-a = {0: 1}
-1 in a
+# %%
+
+X, y = shuffle(X, y)
+data = nd.array(X[:20])
+target = nd.array(y[:20])
+tree._grow(data)
+
+# %%
+
+error = gluon.loss.L2Loss()
+trainer = gluon.Trainer(tree.collect_params(), 'sgd', {'learning_rate': 1})
+
+# %%
+
+for e in range(25):
+  X, y = shuffle(X, y)
+  for data, target in zip(np.split(X, 10), np.split(y, 10)):
+
+    with mx.autograd.record():
+
+      # cost = []
+      # for decision in tree._routerlayer._children.values():
+      #   gate = decision._gate
+      #   cost.append(nd.sigmoid(
+      #     gate._qz_loga.data() -
+      #     gate._temperature * nd.log(-1 * gate._limit_lo / gate._limit_hi)
+      #   ))
+      #
+      # cost = nd.sum(nd.stack(*cost))
+      loss = error(tree(nd.array(data)), nd.array(target))
+      # loss = loss + 0.05*cost
+
+    loss.backward()
+    trainer.step(data.shape[0])
+
+# %%
+
+# tree(nd.array(data))
+#
+for decision in tree._routerlayer._children.values():
+  gate = decision._gate
+  print("keep")
+  print(gate._qz_loga.data())
+  print(decision._sharpness.data())
+
+set([decision._gate().asscalar() for decision in tree._routerlayer._children.values()])
+
+for node in list(tree._embeddlayer._children.values()):
+  if (hasattr(node, "_decision") and node._decision._gate() == 0):
+    tree._prune(node)
+
+# %%
+
+plt.figure()
+plt.scatter(X, y, s = 20, edgecolor = "black", c = "darkorange", label = "data")
+y_1 = tree(nd.array(X_test)).asnumpy()
+plt.plot(X_test, y_1, color = "cornflowerblue", linewidth = 2)
+
+plt.show()
+
+# %%
+
+plt.figure()
+plt.scatter(X, y, s = 20, edgecolor = "black", c = "darkorange", label = "data")
+y_1 = tree(nd.array(X_test)).asnumpy()
+plt.plot(X_test, y_1, color = "cornflowerblue", linewidth = 2)
+
+plt.show()
 
 # %%
 

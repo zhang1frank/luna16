@@ -18,9 +18,9 @@ class Custom_Block(Block):
 class Gate(Custom_Block):
   def __init__(self, droprate_init, temperature, limit_lo, limit_hi, **kwargs):
     super(Gate, self).__init__(**kwargs)
-    self._temperature = temperature
-    self._limit_lo = limit_lo
-    self._limit_hi = limit_hi
+    self._temperature = nd.array([temperature])
+    self._limit_lo = nd.array([limit_lo])
+    self._limit_hi = nd.array([limit_hi])
 
     droprate_init = nd.array([droprate_init])
     qz_loga = nd.log(1 - droprate_init) - nd.log(droprate_init)
@@ -53,6 +53,9 @@ class Box(Custom_Block):
     parent = None, min_list = None, max_list = None, tau = None, **kwargs
   ):
     super(Box, self).__init__(**kwargs)
+
+    inf = -1 * nd.log(nd.array([0]))
+
     with self.name_scope():
       self._parent = parent
       self._min_list = self.params.get(
@@ -62,28 +65,30 @@ class Box(Custom_Block):
         "max_list", grad_req = "null", init = mx.init.Constant(max_list),
         allow_deferred_init = True)
       self._tau = self.params.get(
-        "tau", grad_req = "null", init = mx.init.Constant(tau),
+        "tau", grad_req = "null",
+        init = mx.init.Constant(tau if tau is not None else inf),
         allow_deferred_init = True)
 
       self._init_param("min_list", min_list)
       self._init_param("max_list", max_list)
-      self._init_param("tau", tau)
+      self._init_param("tau", tau if tau is not None else inf)
 
   def forward(self, x):
     parent_tau = 0
     if (self._parent is not None):
       parent_tau = self._parent._box._tau.data()
+
+    if (self._min_list.shape is None and self._max_list.shape is None):
+      return nd.ones_like(x[0])
+
     s = nd.sum(
       nd.maximum(x - self._max_list.data(), 0) +
       nd.maximum(self._min_list.data() - x, 0),
       axis = 1, keepdims = True
     )
-    ans = nd.ones_like(s)
-    if (self._tau.shape is not None):
-      delta = self._tau.data() - parent_tau
-      ans -= nd.exp(-1 * delta * s)
+    delta = self._tau.data() - parent_tau
 
-    return ans
+    return 1 - nd.exp(-1 * delta * s)
 
 
 class Decision(Custom_Block):
@@ -109,9 +114,9 @@ class Decision(Custom_Block):
   def forward(self, x, crisp = False):
     pick_index = nd.broadcast_to(self._dim.data(), x.shape[0])
     x = nd.pick(x, pick_index, keepdims = True)
-    x -= self._split.data()
+    x = x - self._split.data()
     if (crisp == False):
-      x *= nd.relu(self._sharpness.data()) * self._gate()
+      x = x * nd.relu(self._sharpness.data()) * self._gate()
 
     return nd.tanh(x)
 
