@@ -46,33 +46,40 @@ tree._grow(nd.array(data))
 
 X, y = shuffle(X, y)
 
-data = X[:30]
-target = y[:30]
+# data = X[:5]
+# target = y[:5]
 
-tree._grow(nd.array(data))
+for data, target in zip(np.split(X, 10), np.split(y, 10)):
 
-less = tree.collect_params()
-for key in list(less._params.keys()):
-  if less[key].shape is None:
-    less._params.pop(key)
+  tree._grow(nd.array(data))
 
-trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 3})
+  less = tree.collect_params()
+  for key in list(less._params.keys()):
+    if less[key].shape is None:
+      less._params.pop(key)
 
-with mx.autograd.record():
-  loss = error(tree(nd.array(data)), nd.array(target))
+  trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 3})
 
-loss.backward()
-trainer.step(data.shape[0], ignore_stale_grad = True)
+  with mx.autograd.record():
+    loss = error(tree(nd.array(data)), nd.array(target))
 
-after = [node._decision._gate().asscalar() if hasattr(node, "_decision") else None for node in tree._embeddlayer._children.values()]
+  loss.backward()
+  trainer.step(data.shape[0], ignore_stale_grad = True)
 
-hit_value = max(set([x for x in after if x is not None]), key = after.count)
+  after = [node._decision._gate().asscalar() if hasattr(node, "_decision") else None for node in tree._embeddlayer._children.values()]
 
-for node, value in zip(list(tree._embeddlayer._children.values()), after):
-  if (value == hit_value):
-    tree._prune(node)
+  if (len(tree._embeddlayer) > 1):
+    mode = max(set([x for x in after if x is not None]), key = after.count)
+    after.count(mode)
+    hit_value = mode if after.count(mode) > 1 else None
 
-print(len(tree._routerlayer))
+    # hit_value = max(set([x for x in after if x is not None]), key = after.count)
+
+    for node, value in zip(list(tree._embeddlayer._children.values()), after):
+      if (value == hit_value):
+        tree._prune(node)
+
+  print(len(tree._routerlayer))
 
 # %%
 
@@ -82,10 +89,17 @@ set([decision._gate().asscalar() for decision in tree._routerlayer._children.val
 
 next(iter(tree._structure.items()))[0]._decision._gate()
 
-hit_value = max(set([x for x in after if x is not None]), key = after.count)
+max(set([x for x in after if x is not None]), key = after.count)
+
+mode = max(set([x for x in after if x is not None]), key = after.count)
+after.count(mode)
+hitlist = mode if after.count(mode) > 1 else None
 
 for node, value in zip(list(tree._embeddlayer._children.values()), after):
-  if (value == hit_value):
+  print(value)
+
+for node, value in zip(list(tree._embeddlayer._children.values()), after):
+  if (value == hitlist):
     tree._prune(node)
 
 # %%
