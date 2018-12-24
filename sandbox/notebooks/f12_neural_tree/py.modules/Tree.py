@@ -85,9 +85,9 @@ class Tree(Block):
         if (node._box._parent is not None):
           p_node = node._box._parent
           dir = self._structure[p_node].pop(node)
-          n_node = self._new_node(parent = p_node,
-            embedding = p_node._embedding.data())
+          n_node = self._new_node(parent = p_node)
           self._structure[p_node][n_node] = dir
+          self._structure[n_node] = None
           self._weightlayer.add(*[n_node._box])
           self._embeddlayer.add(*[n_node])
         else:
@@ -98,11 +98,11 @@ class Tree(Block):
 
   def _grow(self, x):
 
-    for node in list(self._embeddlayer._children.values()):
-      if (hasattr(node, "_decision") and
-        (node._decision._gate() == 0 or node._decision._sharpness.data() <= 0)
-      ):
-        self._prune(node)
+    # for node in list(self._embeddlayer._children.values()):
+    #   if (hasattr(node, "_decision") and
+    #     (node._decision._gate() == 0 or node._decision._sharpness.data() <= 0)
+    #   ):
+    #     self._prune(node)
 
     root = next(iter(self._structure.items()))[0]
 
@@ -137,10 +137,8 @@ class Tree(Block):
         if (extent > 0):
 
           with self.name_scope():
-            l_node = self._new_node(parent = node,
-              embedding = node._embedding.data())
-            r_node = self._new_node(parent = node,
-              embedding = node._embedding.data())
+            l_node = self._new_node(parent = node)
+            r_node = self._new_node(parent = node)
 
             self._structure[node] = {l_node: -1, r_node: 1}
 
@@ -196,11 +194,9 @@ class Tree(Block):
             tau = tau,
             decision = lambda: Decision(
               split = split, dim = dim, gate = self._new_gate
-            ),
-            embedding = node._embedding.data()
+            )
           )
-          s_node = self._new_node(parent = p_node,
-            embedding = node._embedding.data())
+          s_node = self._new_node(parent = p_node)
           node._box._parent = p_node
 
           if (split < node._box._min_list.data()[dim]):

@@ -79,7 +79,7 @@ class Box(Custom_Block):
       parent_tau = self._parent._box._tau.data()
 
     if (self._min_list.shape is None and self._max_list.shape is None):
-      return nd.ones_like(x[0])
+      return nd.expand_dims(nd.ones_like(x[:, 0]), axis = -1)
 
     s = nd.sum(
       nd.maximum(x - self._max_list.data(), 0) +
@@ -117,6 +117,7 @@ class Decision(Custom_Block):
     x = x - self._split.data()
     if (crisp == False):
       x = x * nd.relu(self._sharpness.data()) * self._gate()
+      # x = x * nd.relu(self._sharpness.data())
 
     return nd.tanh(x)
 
@@ -146,4 +147,7 @@ class Node(Custom_Block):
         )
         self._embedding.initialize()
   def forward(self, x = 0):
+    # if (hasattr(self, "_decision")):
+    #   return self._embedding.data() * self._decision._gate()
+
     return self._embedding.data()

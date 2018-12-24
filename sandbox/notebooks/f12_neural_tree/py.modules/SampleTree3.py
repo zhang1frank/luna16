@@ -50,7 +50,7 @@ trainer = gluon.Trainer(net.collect_params(), 'sgd', {'learning_rate': .01})
 
 # %%
 
-tree = Tree()
+tree = Tree(droprate_init = 0.01)
 tree.collect_params().initialize(force_reinit = True)
 
 # %%
@@ -63,9 +63,15 @@ tree._grow(data)
 # %%
 
 error = gluon.loss.L2Loss()
-trainer = gluon.Trainer(tree.collect_params(), 'sgd', {'learning_rate': 1})
 
 # %%
+
+less = tree.collect_params()
+for key in list(less._params.keys()):
+  if less[key].shape is None:
+    less._params.pop(key)
+
+trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 3})
 
 for e in range(25):
   X, y = shuffle(X, y)
@@ -73,20 +79,20 @@ for e in range(25):
 
     with mx.autograd.record():
 
-      # cost = []
-      # for decision in tree._routerlayer._children.values():
-      #   gate = decision._gate
-      #   cost.append(nd.sigmoid(
-      #     gate._qz_loga.data() -
-      #     gate._temperature * nd.log(-1 * gate._limit_lo / gate._limit_hi)
-      #   ))
-      #
-      # cost = nd.sum(nd.stack(*cost))
+      cost = []
+      for decision in tree._routerlayer._children.values():
+        gate = decision._gate
+        cost.append(nd.sigmoid(
+          gate._qz_loga.data() -
+          gate._temperature * nd.log(-1 * gate._limit_lo / gate._limit_hi)
+        ))
+
+      cost = nd.sum(nd.stack(*cost))
       loss = error(tree(nd.array(data)), nd.array(target))
-      # loss = loss + 0.05*cost
+      loss = loss + 0.1*cost
 
     loss.backward()
-    trainer.step(data.shape[0])
+    trainer.step(data.shape[0], ignore_stale_grad = True)
 
 # %%
 
@@ -101,7 +107,52 @@ for decision in tree._routerlayer._children.values():
 set([decision._gate().asscalar() for decision in tree._routerlayer._children.values()])
 
 for node in list(tree._embeddlayer._children.values()):
-  if (hasattr(node, "_decision") and node._decision._gate() == 0):
+  if (hasattr(node, "_decision") and node._decision._gate() <= 0.5):
+    tree._prune(node)
+
+# %%
+
+tree._grow(nd.array(data))
+
+less = tree.collect_params()
+for key in list(less._params.keys()):
+  if less[key].shape is None:
+    less._params.pop(key)
+
+sum = 0
+for key in list(less._params.keys()):
+  if less[key].shape is not None:
+    sum += len(less[key].data())
+print(sum)
+
+trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 3})
+
+with mx.autograd.record():
+
+  # cost = []
+  # for decision in tree._routerlayer._children.values():
+  #   gate = decision._gate
+  #   cost.append(nd.sigmoid(
+  #     gate._qz_loga.data() -
+  #     gate._temperature * nd.log(-1 * gate._limit_lo / gate._limit_hi)
+  #   ))
+  #
+  # cost = nd.sum(nd.stack(*cost))
+  loss = error(tree(nd.array(data)), nd.array(target))
+  # loss = loss + 0.1*cost
+
+loss.backward()
+trainer.step(data.shape[0], ignore_stale_grad = True)
+
+len(tree._routerlayer)
+set([decision._gate().asscalar() for decision in tree._routerlayer._children.values()])
+
+next(iter(tree._structure.items()))[0]._decision._gate()
+next(iter(tree._structure.items()))[0]._decision._split.data()
+next(iter(tree._structure.items()))[0]._decision._sharpness.data()
+
+for node in list(tree._embeddlayer._children.values()):
+  if (hasattr(node, "_decision") and node._decision._gate._qz_loga.grad() > 0):
     tree._prune(node)
 
 # %%
