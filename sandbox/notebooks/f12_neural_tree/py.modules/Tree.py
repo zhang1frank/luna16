@@ -417,14 +417,19 @@ class Tree(Block):
       depth = depth - 1
       depth = depth[:, 0]
       remainder = 1 - nd.sum(weight_adj, axis = 1)
-      # remainder = remainder + nd.choose_element_0index(weight_adj, depth)
-      remainder = remainder + nd.concat(
-        *[x[d] for d, x in zip(depth, weight_adj)], dim = 0)
-      # weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
-      weight_adj = nd.stack(
-        *[nd.concat(*[y if i != d else r for i, y in enumerate(x)], dim = 0)
-            for d, r, x in zip(depth, remainder, weight_adj)
-          ], axis = 0)
+
+      if (mx.autograd.is_training()):
+        # remainder = remainder + nd.choose_element_0index(weight_adj, depth)
+        remainder = remainder + nd.concat(
+          *[x[d] for d, x in zip(depth, weight_adj)], dim = 0)
+        # weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
+        weight_adj = nd.stack(
+          *[nd.concat(*[y if i != d else r for i, y in enumerate(x)], dim = 0)
+              for d, r, x in zip(depth, remainder, weight_adj)
+            ], axis = 0)
+      else:
+        remainder = remainder + nd.choose_element_0index(weight_adj, depth)
+        weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
 
       head = nd.sum(nd.expand_dims(weight_adj, axis = 2) * router_mat, axis = 1)
 
