@@ -58,7 +58,7 @@ for data, target in zip(np.split(X, 10), np.split(y, 10)):
     if less[key].shape is None:
       less._params.pop(key)
 
-  trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 3})
+  trainer = gluon.Trainer(less, 'sgd', {'learning_rate': 1})
 
   with mx.autograd.record():
     loss = error(tree(nd.array(data)), nd.array(target))
@@ -101,6 +101,41 @@ for node, value in zip(list(tree._embeddlayer._children.values()), after):
 for node, value in zip(list(tree._embeddlayer._children.values()), after):
   if (value == hitlist):
     tree._prune(node)
+
+# %%
+
+root = next(iter(tree._structure.items()))[0]
+router_d, router_mat_d, weight_d, embedd_d = tree._contextify(nd.array([[1.75]]))(root)
+
+router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
+weight = nd.stack(*[weight_d[key] for key in sorted(weight_d)], axis = -1)
+
+embedd = nd.stack(*[embedd_d[key] for key in sorted(embedd_d)], axis = 0)
+router_mat = nd.stack(*[router_mat_d[key] for key in sorted(router_mat_d)], axis = 1)
+
+where = nd.argmin(nd.abs(router + 0.5), axis = 1)
+
+head = nd.concat(*[router_mat[i][k] for i, k in enumerate(where)], dim = 0)
+
+# %%
+
+def traverse(node = next(iter(tree._structure.items()))[0]):
+  print("box")
+  print((node._box._min_list.data() if node._box._min_list.shape is not None else None, node._box._max_list.data() if node._box._max_list.shape is not None else None))
+
+  children = tree._structure[node]
+  print(type(children))
+  if (children is not None):
+    print("split")
+    print((node._decision._dim.data(), node._decision._split.data()))
+    left = next(key for key, value in children.items() if value == -1)
+    right = next(key for key, value in children.items() if value == 1)
+    print("left")
+    traverse(left)
+    print("right")
+    traverse(right)
+
+traverse()
 
 # %%
 

@@ -540,15 +540,32 @@ nd.sum(router_mat, axis = -1)
 root = next(iter(tree._structure.items()))[0]
 router_d, router_mat_d, weight_d, embedd_d = tree._contextify(nd.array([[1, 1], [2, 2], [-1, -1]]))(root)
 
-
 router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
 weight = nd.stack(*[weight_d[key] for key in sorted(weight_d)], axis = -1)
 
 embedd = nd.stack(*[embedd_d[key] for key in sorted(embedd_d)], axis = 0)
 router_mat = nd.stack(*[router_mat_d[key] for key in sorted(router_mat_d)], axis = 1)
 
+where = nd.argmax(nd.maximum(0, 1/(router + 0.5)), axis = 1)
+
+nd.maximum(0, 1/(router + 0.5))
+
+where
+
 presence = nd.sum(router_mat, axis = 2)
 weight_adj = presence * weight
+
+weight
+router + 0.5
+nd.argmin(nd.abs(router + 0.5), axis=1)
+
+router_mat[1][4]
+
+depth
+
+where = nd.argmin(nd.abs(router + 0.5), axis = 1)
+nd.concat(*[router_mat[i][k] for i, k in enumerate(where)], dim = 0)
+
 depth = len(tree._weightlayer) - nd.topk(nd.reverse(presence, axis = 1))
 depth -= 1
 depth = depth[:, 0]
@@ -569,6 +586,8 @@ depth
 
 old
 weight_adj
+
+2 * nd.maximum(0, router)
 
 nd.choose_element_0index(weight_adj, depth)
 

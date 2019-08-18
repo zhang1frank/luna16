@@ -1,0 +1,50 @@
+\begin{thebibliography}{10}
+
+\bibitem{kontschieder2015deep}
+P.~Kontschieder, M.~Fiterau, A.~Criminisi, and S.~Rota~Bulo, ``Deep neural
+  decision forests,'' in {\em Proceedings of the IEEE international conference
+  on computer vision}, pp.~1467--1475, 2015.
+
+\bibitem{suarez1999globally}
+A.~Su{\'a}rez and J.~F. Lutsko, ``Globally optimal fuzzy decision trees for
+  classification and regression,'' {\em IEEE Transactions on Pattern Analysis
+  and Machine Intelligence}, vol.~21, no.~12, pp.~1297--1311, 1999.
+
+\bibitem{2016arXiv160407143B}
+G.~{Biau}, E.~{Scornet}, and J.~{Welbl}, ``{Neural Random Forests},'' {\em
+  arXiv e-prints}, p.~arXiv:1604.07143, Apr 2016.
+
+\bibitem{pmlr-v97-tanno19a}
+R.~Tanno, K.~Arulkumaran, D.~Alexander, A.~Criminisi, and A.~Nori, ``Adaptive
+  neural trees,'' in {\em Proceedings of the 36th International Conference on
+  Machine Learning} (K.~Chaudhuri and R.~Salakhutdinov, eds.), vol.~97 of {\em
+  Proceedings of Machine Learning Research}, (Long Beach, California, USA),
+  pp.~6166--6175, PMLR, 09--15 Jun 2019.
+
+\bibitem{2014arXiv1406.2673L}
+B.~{Lakshminarayanan}, D.~M. {Roy}, and Y.~{Whye Teh}, ``{Mondrian Forests:
+  Efficient Online Random Forests},'' {\em arXiv e-prints}, p.~arXiv:1406.2673,
+  Jun 2014.
+
+\bibitem{2019arXiv190605440G}
+S.~{Ge}, S.~{Wang}, Y.~{Whye Teh}, L.~{Wang}, and L.~T. {Elliott}, ``{Random
+  Tessellation Forests},'' {\em arXiv e-prints}, p.~arXiv:1906.05440, Jun 2019.
+
+\bibitem{jordan1994hierarchical}
+M.~I. Jordan and R.~A. Jacobs, ``Hierarchical mixtures of experts and the em
+  algorithm,'' {\em Neural computation}, vol.~6, no.~2, pp.~181--214, 1994.
+
+\bibitem{lecun-mnisthandwrittendigit-2010}
+Y.~LeCun and C.~Cortes, ``{MNIST} handwritten digit database,'' 2010.
+
+\bibitem{chen2015mxnet}
+T.~Chen, M.~Li, Y.~Li, M.~Lin, N.~Wang, M.~Wang, T.~Xiao, B.~Xu, C.~Zhang, and
+  Z.~Zhang, ``Mxnet: A flexible and efficient machine learning library for
+  heterogeneous distributed systems,'' {\em arXiv preprint arXiv:1512.01274},
+  2015.
+
+\bibitem{DBLP:journals/corr/abs-1711-09784}
+N.~Frosst and G.~E. Hinton, ``Distilling a neural network into a soft decision
+  tree,'' {\em CoRR}, vol.~abs/1711.09784, 2017.
+
+\end{thebibliography}

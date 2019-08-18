@@ -404,34 +404,45 @@ class Tree(Block):
     if (len(self._routerlayer) > 0):
       router_d, router_mat_d, weight_d, embedd_d = self._contextify(x)(root)
 
-      router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
-      weight = nd.stack(*[weight_d[key] for key in sorted(weight_d)], axis = -1)
+      # router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
+      # weight = nd.stack(*[weight_d[key] for key in sorted(weight_d)], axis = -1)
+      #
+      # embedd = nd.stack(*[embedd_d[key] for key in sorted(embedd_d)], axis = 0)
+      # router_mat = nd.stack(
+      #   *[router_mat_d[key] for key in sorted(router_mat_d)], axis = 1)
+      #
+      # presence = nd.sum(router_mat, axis = 2)
+      # weight_adj = presence * weight
+      # depth = len(self._weightlayer) - nd.topk(nd.reverse(presence, axis = 1))
+      # depth = depth - 1
+      # depth = depth[:, 0]
+      # remainder = 1 - nd.sum(weight_adj, axis = 1)
+      #
+      # if (mx.autograd.is_training()):
+      #   # remainder = remainder + nd.choose_element_0index(weight_adj, depth)
+      #   remainder = remainder + nd.concat(
+      #     *[x[d] for d, x in zip(depth, weight_adj)], dim = 0)
+      #   # weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
+      #   weight_adj = nd.stack(
+      #     *[nd.concat(*[y if i != d else r for i, y in enumerate(x)], dim = 0)
+      #         for d, r, x in zip(depth, remainder, weight_adj)
+      #       ], axis = 0)
+      # else:
+      #   remainder = remainder + nd.choose_element_0index(weight_adj, depth)
+      #   weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
+      #
+      # head = nd.sum(nd.expand_dims(weight_adj, axis = 2) * router_mat, axis = 1)
+      #
+      # return nd.dot(head, embedd)
 
       embedd = nd.stack(*[embedd_d[key] for key in sorted(embedd_d)], axis = 0)
+      router = nd.stack(*[router_d[key] for key in sorted(router_d)], axis = -1)
       router_mat = nd.stack(
         *[router_mat_d[key] for key in sorted(router_mat_d)], axis = 1)
 
-      presence = nd.sum(router_mat, axis = 2)
-      weight_adj = presence * weight
-      depth = len(self._weightlayer) - nd.topk(nd.reverse(presence, axis = 1))
-      depth = depth - 1
-      depth = depth[:, 0]
-      remainder = 1 - nd.sum(weight_adj, axis = 1)
+      where = nd.argmax(nd.maximum(0, 1/(router + 0.5)), axis = 1)
 
-      if (mx.autograd.is_training()):
-        # remainder = remainder + nd.choose_element_0index(weight_adj, depth)
-        remainder = remainder + nd.concat(
-          *[x[d] for d, x in zip(depth, weight_adj)], dim = 0)
-        # weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
-        weight_adj = nd.stack(
-          *[nd.concat(*[y if i != d else r for i, y in enumerate(x)], dim = 0)
-              for d, r, x in zip(depth, remainder, weight_adj)
-            ], axis = 0)
-      else:
-        remainder = remainder + nd.choose_element_0index(weight_adj, depth)
-        weight_adj = nd.fill_element_0index(weight_adj, remainder, depth)
-
-      head = nd.sum(nd.expand_dims(weight_adj, axis = 2) * router_mat, axis = 1)
+      head = nd.concat(*[router_mat[i][k] for i, k in enumerate(where)], dim = 0)
 
       return nd.dot(head, embedd)
 

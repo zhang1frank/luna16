@@ -6,9 +6,10 @@ setup(
   install_requires = [
     "matplotlib >= 2.2",
     "mxnet >= 1.2",
-    "radio == 0.1.0"
+    # "tensorflow >= 2.0.0-beta1"
+    "radio @ git+https://github.com/analysiscenter/radio.git",
+    "tqdm >= 4.32",
+    # "torch >= 1.1"
   ],
-  dependency_links = [
-    "git+https://github.com/analysiscenter/radio.git#egg=radio-0.1.0"
-  ]
+  dependency_links = []
 )

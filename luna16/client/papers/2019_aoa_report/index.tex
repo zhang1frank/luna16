@@ -1,0 +1,198 @@
+\documentclass[a4paper,11pt,final]{article}
+\usepackage{fancyvrb, color, graphicx, hyperref, amsmath, url}
+\usepackage{palatino}
+\usepackage{pygments}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage[a4paper,text={16.5cm,25.2cm},centering]{geometry}
+
+\hypersetup
+{
+  pdfauthor = {Frank Zhang},
+  pdftitle={Backpropagation applied to random tessellation trees},
+  colorlinks=TRUE,
+  linkcolor=black,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1.2ex}
+
+\title{Backpropagation applied to random tessellation trees}
+\author{Frank Zhang}
+\date{30 June 2019}
+
+\begin{document}
+\maketitle
+
+\section{Abstract}
+
+Deep neural networks and decision trees operate under two distinct paradigms; the former performs representation learning with pre-specified architecture while the latter induces partitions over pre-specified features using a data-driven architecture. Inspired by the use of decision trees to construct visual codebooks, this work seeks to learn trees using a process that is both robust to large datasets and allows them to be optimized end-to-end in a unified deep learning architecture for image recognition applications. The method of tree growth is inspired by recent work on a nonparametric space partitioning methods called the Randomized Tessellation process and the stochastic routing formulation of soft decision trees is used to enable gradient descent optimization. An initial assessment of the proposed learning algorithm is conducted using the MNIST dataset that also shows how the modular compatible neural tree can be incorporated into a traditional neural network stack.
+
+\section{Introduction}
+
+Decision tree learning is a popular data modeling technique due in part to the simplicity of trees. For real-world applications, ensembles of decision trees, such as random forests and gradient boosted trees, are widely used for their competitive predictive performance and better generalization compared to single tree models. Though deep learning approaches have largely dominated current computer vision tasks such as image classification and semantic segmentation, decision trees are still of interest for the proximity measures they can induce. Specifically, once a decision tree has been trained, the proximity between samples can be calculated by determining the number of times they land in the same terminal node or the number of tree splits that separate them. Conducting such similarity assessments can aid in clinical reasoning for example by enabling image-content based retrieval of previous cases, which may also ease model interpretability. By contrast, current neural network descriptive measures lack an analogous method to perform such auxiliary comparisons in addition to the main predictive task.
+
+Nevertheless, one of the major draws of deep learning approaches is the joint learning of feature representations together with their classifiers, which has typically outperformed conventional handcrafted feature pipelines. Current decision tree techniques fall short in this regard in that the input or feature space on which they operate is typically predefined and unchanged, unlike the multilayered transformations afforded by current neural network architectures. One way to surmount this shortcoming is to reformulate the decision tree as a neural network with differentiable split functions to guide inputs through a tree while delivering gradients through backpropagation to the lower layers of a servicing network. This approach has been taken in similar works, each using different mappings between decision trees and neural networks \cite{kontschieder2015deep, suarez1999globally, 2016arXiv160407143B}. However, only a few seriously explore reformulating decision trees in a modular compatible manner.
+
+The main contribution of this work is to provide a method for reformulating a decision tree learner as a neural network layer that is more faithful to the growing process of traditional trees \cite{pmlr-v97-tanno19a}. A logical way forward currently exists using Bayesian nonparametric space partitioning methods such as the Mondrian process and its recent extension, the Random Tessellation process \cite{2014arXiv1406.2673L, 2019arXiv190605440G}. At this point, no theoretical study has yet been reported on optimizing the splits produced by these methods, which are chosen independent of the labels, using a method like backpropagation. Thus, the current approach is twofold: augmenting decision trees with representation learning and optimizing the trees produced by the aforementioned stochastic processes so the splits better reflect the labels.
+
+\section{Methods}
+
+\subsection{Decision Tree Framework}
+
+The general task of prediction involves \textit{N} labeled examples (\textit{\textbf{x}}\textsubscript{1}, \textit{y}\textsubscript{1}),...,(\textit{\textbf{x}}\textsubscript{n}, \textit{y}\textsubscript{n}) from $\mathbb{R}$\textsubscript{d} $\times$ $\mathcal{Y}$ wherein the task is to predict labels \textit{y} $\in$
+$\mathcal{Y}$ for unlabeled test points \textit{\textbf{x}} $\in$ $\mathbb{R}$\textsubscript{d}.
+
+A decision tree on $\mathbb{R}$\textsubscript{d} is a hierarchical partitioning of $\mathbb{R}$\textsubscript{d} and a rule for predicting \textit{y} given the partition containing a data item. Most approaches consider a strictly binary tree \textit{T}, which contains a finite set of nodes such that every node \textit{j} has exactly one parent node, except for a root node $\epsilon$ which has no parent, and every node \textit{j} is the parent of exactly zero or two children nodes, called the left child $\mathrm{left}$(\textit{j}) and the right child $\mathrm{right}$(\textit{j}). Each node of the tree \textit{j} in \textit{T} is associated with a block
+\textit{B}\textsubscript{\textit{j}} in $\mathbb{R}$\textsubscript{d} of the input space such that, at the root, \textit{B}\textsubscript{$\epsilon$} = $\mathbb{R}$\textsubscript{d} or the entire space, while each internal node with two children is a split of its parent's block into two smaller blocks. Nodes with two children are decision nodes or splits of \textit{T} indexed by $\mathcal{N}$ because they are assigned a decision function parameterized by $\Theta$, which is responsible for routing samples along the tree and determining the size of each child block. Those nodes without children are referred to as prediction nodes or leaves of \textit{T} indexed by $\mathcal{L}$ and together form the partition of $\mathbb{R}$\textsubscript{d}. During prediction, the input is first passed into the tree root node and, when it reaches a decision node, sent to the left or right subtree based on the output of the decision function. This is repeated until a leaf node is reached, at which point the rule is applied to obtain an output.
+
+\subsection{Soft Decision Trees}
+
+Suppose a tree has already been provided. To allow for training based on gradient backpropagation, the rule and especially the decision function should be differentiable. The approach taken here has been described in previous works as stochastic routing \cite{kontschieder2015deep}. As opposed to the hard decision node which redirects instances to one of its children, a soft decision node redirects instances to all its children with probabilities calculated by the decision function. The probability of either going left or right at node \textit{j}, or $p^L_j$ or $p^R_j$ respectively, is described by the following functions:
+
+\begin{equation}
+p^L_j = 1 - g_j(x)
+\end{equation}
+\begin{equation}
+p^R_j = g_j(x)
+\end{equation}
+\begin{equation}
+g_j(x) = \frac{1}{1 + exp[-(w^T_jx + w_{j0})]} = \sigma(w^T_jx + w_{j0})
+\end{equation}
+
+where $\sigma(x)$ is the sigmoid function, and the linear gating function $w^T_jx + w_{j0}$ defines an oblique split, which is in contrast to the axis-orthogonal splits often used by other tree algorithms. A previously proposed interpretation is to consider each $g_j(x)$ as a linear output unit of a deep network that will be turned into a probabilistic routing decision by the action of a sigmoid activation \cite{kontschieder2015deep}.
+
+To determine the output of the tree, the rules of each leaf node are averaged by the probability of reaching the leaf, which is simply the product of all decision node probabilities along the path from the root node to the leaf. Typically, for most decision tree models, the rule is a class probability distribution for classification or constant output for regression determined by computing the appropriate statistics of the data partition that reaches that leaf. In line with maintaining differentiability through the various levels of the model, one can instead view the rule as an embedding layer of a neural network that maps the leaf index to vectors of real numbers as appropriate for the task. Alternatively, with the benefit of using backpropagation to perform optimization, more complicated terminal models within the leaves can be considered, such as linear models and even additional neural networks. In essence, the soft decision tree is a mixture of experts model that uses the tree membership probability as the gating network \cite{jordan1994hierarchical}.
+
+\subsection{Tree Construction}
+
+The tree structure is inferred from the data based on some procedure which forms the crux of the learning algorithm. Of interest here is the method of inferring the order of splits and how those splits are initially oriented in the input space. While randomly initialized splits have been considered in the past, the approach taken here builds on the sampling procedures outlined in the Mondrian and Random Tessellation processes for trees \cite{2014arXiv1406.2673L, 2019arXiv190605440G}.
+
+A Randomized Tessellation process, of which the Mondrian process is a special case, is a continuous-time Markov process ($\mathcal{M}$\textsubscript{\textit{t}} : \textit{t} $\geq$ 0), in which events are cuts (specified by hyperplanes) of $\mathbb{R}$\textsubscript{d} with an associated split time \textit{t} \textit{t}\textsubscript{\textit{j}} $\geq$ 0 for each node \textit{j}. Split times increase with depth, i.e. \textit{t}\textsubscript{\textit{j}} $>$
+\textit{t}\textsubscript{$\mathrm{parent}$(\textit{j})}, where $\mathrm{parent}$(\textit{j}) denotes the parent of node \textit{j}, and \textit{t}\textsubscript{$\mathrm{parent}(\epsilon)$} = 0. The expected depth of a Mondrian tree is parameterized by a non-negative lifetime parameter $\lambda > 0$, though $\lambda = \infty$ is commonly used. The depth can also be controlled by only splitting nodes that contain more than a predetermined minimum number of data points. Both stopping criterion are described here.
+
+The algorithm builds an unpruned decision tree according to the classical top-down procedure. Each block is associated with a bound that is approximated by a closed ball whose radius $r_j$ and position $c_j$ are computed using the dimension-wise maximum $max_d(x)$ standard deviation and mean respectively of an isotropic Gaussian. The approximation is used for block lifetime calculations for reasons described in the Randomized Tessellation process \cite{2019arXiv190605440G}. Like the Randomized Tessellation process, the splits are sampled independent of the labels and are not necessarily axis-aligned. More precisely, the sampled hyperplane intersects the ball centered at the mean of the data. However, only splits that separate the input data into two partitions are accepted. This filters out splits that do not further separate the dataset predictors.
+
+An additional element when considering a smoothened decision boundary is the contrast of the sigmoid activation or the sharpness of the transition from 0 to 1. To achieve this, the weights and bias of the linear gating function $w^T_jx + w_{j0}$ are both scaled by a hyperparameter that is inversely proportional to the radius $r_j$. The default suggested here is scaling by a factor $\frac{3}{r_j}$ which ensures that the probability of separation of data at the periphery of the sphere is ~95\% initially.
+
+\section{Experiments}
+
+Behavior of the proposed learning algorithm was evaluated for initial feasibility using the MNIST classification dataset \cite{lecun-mnisthandwrittendigit-2010}. All models are implemented in Mxnet \cite{chen2015mxnet}.
+
+For all the experiments detailed, the following training protocol was employed: (1) to constrain the number of splits in these experiments, a random subset of the data was chosen and trees were grown until each point was totally partitioned (e.g. 9 data points would produce 8 splits); (2) parameters were optimized using stochastic gradient descent with learning rate determined by experimentation to yield stable network training that did not cause numerical instability with minibatches of size 64; (3) networks were trained for 1 epoch (i.e. 1 iteration) over the entire dataset.
+
+\begin{algorithm}[H]
+\DontPrintSemicolon
+\SetAlgoLined
+\SetKwFunction{splitNode}{splitNode}
+\SetKwFunction{sampleRandomSplit}{sampleRandomSplit}
+\SetKwFunction{stopSplit}{stopSplit}
+\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
+\SetKwProg{procblock}{Procedure}{}{}
+\procblock{\splitNode{$j, \mathcal{D}_{N(j)}$}}{
+  \Input{node $j$, data points at node $j$}
+  Add $j$ to $T$\;
+  Set $c_j = mean(X_{N(j)})$, $r_j = 2 \sqrt{max_d(variance(X_{N(j)}))}$\;
+  Sample $E$ from exponential distribution with rate $r_j$\;
+  \eIf{\stopSplit{} is FALSE}{
+      Set $\tau_j = \tau_{parent(j)} + E$\;
+      Sample split $(w^T_j, w_{j0})$ according to \sampleRandomSplit{}\;
+      Set $N(left(j)) = \{n \in N(j) : 0 > w^T_jX_{N(j)} + w_{j0}\}$ and $N(right(j)) = \{n \in N(k) : 0 < w^T_jX_{N(j)} + w_{j0}\}$\;
+      \splitNode{$left(j)$, $\mathcal{D}_{N(left(j))}$}\;
+      \splitNode{$right(j)$, $\mathcal{D}_{N(right(j))}$}\;
+  }{
+    Add $j$ to $leaves(T)$\;
+  }
+  }{}
+\SetKwProg{funcblock}{Function}{}{}
+\funcblock{\sampleRandomSplit{$\mathcal{D}_{N(j)}, c_j, r_j$}}{
+  \Input{data points at node $j$, center of $j$, radius of $j$}
+  \Output{weight and bias of oblique split}
+  Sample $n$ and $r_0$ from the surface of unit sphere with the same dimension as $X_{N(j)}$\;\label{alg:goto}
+  Sample $u \sim Uniform[0, r_j]$\;
+  Set $r_0 = u (r_0 + c_j)$\;
+  \eIf{plane $n \cdot (r - r_0)$ intersects $\mathcal{D}_{N(j)}$}{
+    Set $b = \frac{3}{r_j}$\;
+    Set $w^T_j = bn$\;
+    Set $w_{j0} = -b(r_0 \cdot n)$\;
+    $RETURN$ $(w^T_j, w_{j0})$
+  }{
+    $GOTO$ line \ref{alg:goto}\;
+  }
+}
+\SetKwProg{funcblock}{Function}{}{}
+\funcblock{\stopSplit{$j, \mathcal{D}_{N(j)}, E$}}{
+  \Input{node $j$, data points at node $j$, additional lifetime}
+  \Output{boolean}
+  \uIf{$\tau_{parent(j) + E > \lambda}$}{
+    $RETURN$ $TRUE$\;
+  }
+  \uElseIf{number of samples in $\mathcal{D}_{N(j)} < min\_samples\_split$}{
+    $RETURN$ $TRUE$\;
+  }
+  \uElseIf{number of samples in $\mathcal{D}_{N(j)} < 2$}{
+    $RETURN$ $TRUE$\;
+  }
+  \uElse{
+    $RETURN$ $FALSE$\;
+  }
+}
+\caption{Splitting algorithm (for numerical attributes)}
+\end{algorithm}
+
+Several different model architectures were investigated. The first variant is a single decision tree with varying number of splits. The second variant (referred to as forest) is an ensemble akin to random forests where the predictions of several trees are averaged. The third variant (referred to a as multilayer forest) is an ensemble similar to a forest; however, the output is instead used as input to a subsequent prediction layer in a multilayer fashion. The fourth variant (referred to a as boosted trees) is an ensemble akin to boosted trees where the predictions of individual trees are the model residuals of previous estimates and the final estimate is obtained by adding all of the tree estimates together. Lastly, to show that the trees can guide learning of feature representations, several of the above models are trained either on the raw data features or fed a feature map using a jointly learned convolutional layer (a 2D convolution with 32 kernels of spatial size 5x5). Accuracies are reported on a separate testing set. For all tree models except the multilayer forest, the rule to determine the tree output is a linear model with 10 classes that is randomly initialized. Hence, a linear classifier, which can be considered a tree with 0 splits, is used as a baseline. For the multilayer forest, the rule is a randomly initialized linear model that compresses the input into one output and applies a RELU nonlinearity before passing the output to the next layer.
+
+\begin{table}[]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\multicolumn{1}{c}{Method}                  & Accuracy & Learning Rate \\ \midrule
+linear classifier                           & 91.1\%   & 0.3           \\
+tree (1 split)                              & 91.1\%   & 0.1           \\
+tree (1 split) + conv5-32                   & 92.9\%   & 0.01          \\
+tree (4 split)                              & 91.3\%   & 0.1           \\
+tree (4 split) + conv5-32                   & 90.2\%   & 0.01          \\
+tree (8 split)                              & 91.5\%   & 0.1           \\
+tree (16 split)                             & 90.8\%   & 0.1           \\
+forest (1 split, 4 trees)                   & 88.8\%   & 0.1           \\
+forest (1 split, 8 trees)                   & 88.6\%   & 0.1           \\
+forest (1 split, 16 trees)                  & 87.8\%   & 0.1           \\
+forest (8 split, 8 trees)                   & 87.9\%   & 0.1           \\
+ml forest (1 split, 4 trees)                & 85.0\%   & 0.1           \\
+ml forest (1 split, 8 trees)                & 91.1\%   & 0.1           \\
+ml forest (1 split, 16 trees)               & 92.7\%   & 0.1           \\
+ml forest (8 split, 8 trees)                & 89.3\%   & 0.1           \\
+boosted trees (1 split, 4 trees)            & 94.2\%   & 0.1           \\
+boosted trees (1 split, 4 trees) + conv5-32 & 94.8\%   & 0.01          \\
+boosted trees (1 split, 8 trees)            & 92.7\%   & 0.01          \\
+boosted trees (1 split, 8 trees) + conv5-32 & 96.0\%   & 0.01          \\
+boosted trees (1 split, 16 trees)           & 88.8\%   & 0.01          \\
+boosted trees (8 split, 8 trees)            & 92.5\%   & 0.01          \\
+boosted trees (8 split, 8 trees) + conv5-32 & 96.8\%   & 0.01          \\ \bottomrule
+\end{tabular}
+\caption{Comparison of performance of different models on MNIST. The model columns indicate how many splits were used for each tree and how many trees were used for each ensemble and whether or not there was a convolutional feature map.}
+\label{tab:results}
+\end{table}
+
+It is observed in these preliminary experiments that the performance of trees was only comparable to the baseline linear model. One concern that has been raised in a previous work \cite{DBLP:journals/corr/abs-1711-09784} is the observation that soft decision trees tend to get stuck on plateaus in which one or few of the internal nodes always assign almost all the probability to one of its sub-trees, which causes the gradient of the logistic for the decision to tend to zero. This would cause all of the data to route through a small subset of rules, thereby eliminating much of the potential expressiveness of the tree model and potentially defaulting to the linear rule in a single leaf. In these preliminary experiments however, it was difficult to tell whether the limitation in performance was due to this phenomenon or the lack of epochs used to train each model due to time constraints.
+
+Of note, the best performing ensembles based on these experiments were the multilayered forest and boosted trees. When they consist of shallow trees, both ensembles avoid the problem of multiplying consecutive sigmoids together. The increase in model performance with the increasing number of trees in the multilayered forest is similar to the behavior of increasing the number of neurons in a densely connected layer as individual trees function analogously to single neurons. The increase in model performance associated with boosting trees is likely due to the summation of additional gradient information of multiple models allowing more rapid optimization over a single epoch, all else equal. Although similar to boosted decision trees in that the prediction of individual trees are summed together, here, each model is learned simultaneously as opposed to sequentially with the previous model fixed. For boosted trees especially, the addition of feature learning through convolutions had a strong positive impact on model performance.
+
+\section{Discussion}
+
+This report investigates the feasibility of optimizing trees inferred using the Randomized Tessellation sampling algorithm with the hierarchical representation learning and gradient descent optimization of deep neural networks. The original hypothesis of this project was to show that the usage of a decision tree initialized neural network can achieve similar performance to deep learning models while using fewer parameters on the LUNA16 dataset. In that direction, the scope of the work here shows that a visual codebook using a multilayered forest is potentially feasible as verified on the MNIST dataset. In addition, the performance of boosted trees as an end-layer classifier is of potential interest for other prediction tasks.
+
+Future work would be to determine whether the learned splits induce any meaningful partitions of the dataspace such that similar examples have similar decision node outputs. In addition, a more unified growing-training algorithm that duplicates a rule among the split leaves may be useful to investigate. Currently, the linear models are independently initialized for each leaf. However, it may make more sense to optimize a tree with a single leaf, induce a split and clone the rule for both leaves, and then re-optimize with the added split. The split may be validated for usefulness before deciding to keep it or terminate the growing process.
+
+\section{Acknowledgements}
+
+Supported in part by an Alpha Omega Alpha Carolyn L. Kuckein Student Research Fellowship.
+
+\bibliography{references}
+\bibliographystyle{ieeetr}
+
+\end{document}
